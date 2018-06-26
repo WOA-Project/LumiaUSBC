@@ -117,6 +117,9 @@
     <ConfigurationType>Driver</ConfigurationType>
     <DriverType>KMDF</DriverType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
+    <UcmDriver>true</UcmDriver>
+    <UCM_VERSION_MAJOR>1</UCM_VERSION_MAJOR>
+    <UCM_VERSION_MINOR>0</UCM_VERSION_MINOR>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>

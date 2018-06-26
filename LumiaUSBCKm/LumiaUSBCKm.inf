@@ -4,8 +4,8 @@
 
 [Version]
 Signature="$WINDOWS NT$"
-Class=Sample ; TODO: edit Class
-ClassGuid={78A1C341-4539-11d3-B88D-00C04FAD5171} ; TODO: edit ClassGuid
+Class=USB
+ClassGuid={36FC9E60-C465-11CF-8056-444553540000}
 Provider=%ManufacturerName%
 CatalogFile=LumiaUSBCKm.cat
 DriverVer= ; TODO: set DriverVer in stampinf property pages
@@ -13,15 +13,6 @@ DriverVer= ; TODO: set DriverVer in stampinf property pages
 [DestinationDirs]
 DefaultDestDir = 12
 LumiaUSBCKm_Device_CoInstaller_CopyFiles = 11
-
-; ================= Class section =====================
-
-[ClassInstall32]
-Addreg=SampleClassReg
-
-[SampleClassReg]
-HKR,,,0,%ClassName%
-HKR,,Icon,,-5
 
 [SourceDisksNames]
 1 = %DiskName%,,,""
@@ -38,7 +29,7 @@ WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll=1 ; make sure the number matches with
 %ManufacturerName%=Standard,NT$ARCH$
 
 [Standard.NT$ARCH$]
-%LumiaUSBCKm.DeviceDesc%=LumiaUSBCKm_Device, Root\LumiaUSBCKm ; TODO: edit hw-id
+%LumiaUSBCKm.DeviceDesc%=LumiaUSBCKm_Device, ACPI\LUMI0001
 
 [LumiaUSBCKm_Device.NT]
 CopyFiles=Drivers_Dir
@@ -80,7 +71,6 @@ KmdfLibraryVersion = $KMDFVERSION$
 [Strings]
 SPSVCINST_ASSOCSERVICE= 0x00000002
 ManufacturerName="<Your manufacturer name>" ;TODO: Replace with your manufacturer name
-ClassName="Samples" ; TODO: edit ClassName
 DiskName = "LumiaUSBCKm Installation Disk"
-LumiaUSBCKm.DeviceDesc = "LumiaUSBCKm Device"
+LumiaUSBCKm.DeviceDesc = "LumiaUSBCKm Device (Vbus=on, Pol=1, iteration=1)"
 LumiaUSBCKm.SVCDESC = "LumiaUSBCKm Service"

@@ -14,7 +14,10 @@ Environment:
 
 --*/
 
+#pragma once
+
 #include "public.h"
+#include <UcmCx.h>
 
 EXTERN_C_START
 
@@ -24,9 +27,21 @@ EXTERN_C_START
 //
 typedef struct _DEVICE_CONTEXT
 {
-    ULONG PrivateDeviceData;  // just a placeholder
+	WDFDEVICE Device;
+	UCMCONNECTOR Connector;
+	LARGE_INTEGER SpiId;
+	LARGE_INTEGER VbusGpioId;
+	LARGE_INTEGER PolGpioId;
+	LARGE_INTEGER AmselGpioId;
+	LARGE_INTEGER EnGpioId;
 
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
+
+typedef struct _CONNECTOR_CONTEXT
+{
+	int dummy;
+
+} CONNECTOR_CONTEXT, *PCONNECTOR_CONTEXT;
 
 //
 // This macro will generate an inline function called DeviceGetContext
@@ -34,6 +49,7 @@ typedef struct _DEVICE_CONTEXT
 // in a type safe manner.
 //
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(CONNECTOR_CONTEXT, ConnectorGetContext)
 
 //
 // Function to initialize the device and its callbacks
