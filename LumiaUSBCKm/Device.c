@@ -19,6 +19,7 @@ Environment:
 #define RESHUB_USE_HELPER_ROUTINES
 #include <reshub.h>
 #include <gpio.h>
+#include <wdf.h>
 //#include "device.h"
 
 EVT_WDF_DEVICE_PREPARE_HARDWARE LumiaUSBCDevicePrepareHardware;
@@ -26,6 +27,10 @@ EVT_UCM_CONNECTOR_SET_DATA_ROLE     LumiaUSBCSetDataRole;
 //EVT_WDF_DEVICE_D0_ENTRY LumiaUSBCDeviceD0Entry;
 
 
+NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length);
+NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length);
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value);
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value);
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (PAGE, LumiaUSBCKmCreateDevice)
@@ -49,6 +54,83 @@ LumiaUSBCSetDataRole(
 	return STATUS_SUCCESS;
 }
 
+BOOLEAN EvtInterruptIsr(
+	WDFINTERRUPT Interrupt,
+	ULONG MessageID
+)
+{
+	UNREFERENCED_PARAMETER(MessageID);
+	WdfInterruptQueueWorkItemForIsr(Interrupt);
+
+	return TRUE;
+}
+
+void Uc120InterruptWorkItem(
+	WDFINTERRUPT Interrupt,
+	WDFOBJECT AssociatedObject
+)
+{
+	UNREFERENCED_PARAMETER(Interrupt);
+	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
+	char registers[8];
+	char dismiss = 0xFF;
+	wchar_t buf[260];
+	ULONG data = 0;
+
+	ReadRegister(ctx,  0, registers + 0, 1);
+	ReadRegister(ctx,  1, registers + 1, 1);
+	ReadRegister(ctx,  2, registers + 2, 1);
+	ReadRegister(ctx,  5, registers + 3, 1);
+	ReadRegister(ctx,  7, registers + 4, 1);
+	ReadRegister(ctx,  9, registers + 5, 1);
+	ReadRegister(ctx, 10, registers + 6, 1);
+	ReadRegister(ctx, 11, registers + 7, 1);
+
+	WriteRegister(ctx, 2, &dismiss, 1);
+
+	swprintf(buf, L"UC120_%02x%02x%02x%02x%02x%02x%02x%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+
+	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&data,
+		sizeof(ULONG));
+}
+
+void PlugDetInterruptWorkItem(
+	WDFINTERRUPT Interrupt,
+	WDFOBJECT AssociatedObject
+)
+{
+	UNREFERENCED_PARAMETER(Interrupt);
+	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
+	char registers[8];
+//	char dismiss = 0x1;
+	wchar_t buf[260];
+	ULONG data = 0;
+
+	ReadRegister(ctx, 0, registers + 0, 1);
+	ReadRegister(ctx, 1, registers + 1, 1);
+	ReadRegister(ctx, 2, registers + 2, 1);
+	ReadRegister(ctx, 5, registers + 3, 1);
+	ReadRegister(ctx, 7, registers + 4, 1);
+	ReadRegister(ctx, 9, registers + 5, 1);
+	ReadRegister(ctx, 10, registers + 6, 1);
+	ReadRegister(ctx, 11, registers + 7, 1);
+
+	//WriteRegister(ctx, 2, &dismiss, 1);
+
+	swprintf(buf, L"PLUGDET_%02x%02x%02x%02x%02x%02x%02x%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+
+	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&data,
+		sizeof(ULONG));
+}
+
 NTSTATUS
 LumiaUSBCProbeResources(
 	PDEVICE_CONTEXT ctx,
@@ -57,7 +139,8 @@ LumiaUSBCProbeResources(
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	PCM_PARTIAL_RESOURCE_DESCRIPTOR  desc;
-	int k = 0;
+	WDF_INTERRUPT_CONFIG Config;
+	int k = 0, l = 0;
 	int spi_found = 0;
 	for (unsigned int i = 0; i < WdfCmResourceListGetCount(res); i++) {
 		desc = WdfCmResourceListGetDescriptor(res, i);
@@ -100,9 +183,24 @@ LumiaUSBCProbeResources(
 			break;
 
 		case CmResourceTypeInterrupt:
-			//
-			// TODO Handle interrupt resources here.
-			//
+			switch (l)
+			{
+			case 0:
+				WDF_INTERRUPT_CONFIG_INIT(&Config, EvtInterruptIsr, NULL);
+				Config.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
+				Config.InterruptTranslated = desc;
+				WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->PlugDetectInterrupt);
+				break;
+			case 1:
+				WDF_INTERRUPT_CONFIG_INIT(&Config, EvtInterruptIsr, NULL);
+				Config.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
+				Config.InterruptTranslated = desc;
+				WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->Uc120Interrupt);
+				break;
+			default:
+				break;
+			}
+			l++;
 			break;
 		default:
 			//
@@ -219,6 +317,7 @@ NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value)
 	if (!NT_SUCCESS(status))
 		return status;
 
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, value, 1);
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, 1);
 
 	status = WdfIoTargetSendIoctlSynchronously(IoTarget, NULL, IOCTL_GPIO_WRITE_PINS, &inputDescriptor, &outputDescriptor, NULL, NULL);
@@ -296,7 +395,7 @@ LumiaUSBCDevicePrepareHardware(
 	connCtx = ConnectorGetContext(devCtx->Connector);
 
 	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS Params;
-	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS_INIT(&Params, UcmTypeCPartnerDfp);
+	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS_INIT(&Params, UcmTypeCPartnerUfp);
 	Params.CurrentAdvertisement = UcmTypeCCurrentDefaultUsb;
 	UcmConnectorTypeCAttach(devCtx->Connector, &Params);
 
@@ -309,7 +408,7 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
 	UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
 	UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
-	UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSink);
+	UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSource);
 
 	char value = (char)0;
 	SetGPIO(devCtx, devCtx->VbusGpioId, &value);
@@ -317,6 +416,49 @@ LumiaUSBCDevicePrepareHardware(
 	SetGPIO(devCtx, devCtx->AmselGpioId, &value); // high = HDMI only, medium (unsupported) = USB only, low = both
 	value = (char)1;
 	SetGPIO(devCtx, devCtx->EnGpioId, &value);
+
+	// Initialize the UC120
+	char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B };
+
+	WriteRegister(devCtx, 18, initvals + 0, 1);
+	WriteRegister(devCtx, 19, initvals + 1, 1);
+	WriteRegister(devCtx, 20, initvals + 2, 1);
+	WriteRegister(devCtx, 21, initvals + 3, 1);
+	WriteRegister(devCtx, 26, initvals + 4, 1);
+	WriteRegister(devCtx, 22, initvals + 5, 1);
+	WriteRegister(devCtx, 23, initvals + 6, 1);
+	WriteRegister(devCtx, 24, initvals + 7, 1);
+	WriteRegister(devCtx, 25, initvals + 8, 1);
+	WriteRegister(devCtx, 27, initvals + 9, 1);
+
+	value = 0xFF;
+	WriteRegister(devCtx, 2, &value, 1);
+	WriteRegister(devCtx, 3, &value, 1);
+
+	ReadRegister(devCtx, 4, &value, 1);
+	value |= 1;
+	WriteRegister(devCtx, 4, &value, 1);
+
+	char registers[8];
+	wchar_t buf[260];
+	ULONG data = 0;
+
+	ReadRegister(devCtx, 0, registers + 0, 1);
+	ReadRegister(devCtx, 1, registers + 1, 1);
+	ReadRegister(devCtx, 2, registers + 2, 1);
+	ReadRegister(devCtx, 5, registers + 3, 1);
+	ReadRegister(devCtx, 7, registers + 4, 1);
+	ReadRegister(devCtx, 9, registers + 5, 1);
+	ReadRegister(devCtx, 10, registers + 6, 1);
+	ReadRegister(devCtx, 11, registers + 7, 1);
+	swprintf(buf, L"INIT_%02x%02x%02x%02x%02x%02x%02x%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+
+	/*status =*/ RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&data,
+		sizeof(ULONG));
 
 	//UcmEventInitialize(&connCtx->EventSetDataRole);
 
