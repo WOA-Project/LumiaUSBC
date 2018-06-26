@@ -119,45 +119,107 @@ LumiaUSBCProbeResources(
 	return status;
 }
 
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, int onoff)
+NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, WDFIOTARGET *target)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	WDFIOTARGET IoTarget;
-	//WDFREQUEST IoctlRequest;
-	WDF_MEMORY_DESCRIPTOR inputDescriptor, outputDescriptor;
 	WDF_OBJECT_ATTRIBUTES ObjectAttributes;
 	WDF_IO_TARGET_OPEN_PARAMS OpenParams;
 	UNICODE_STRING ReadString;
 	WCHAR ReadStringBuffer[260];
-	char ToWrite = (char)onoff;
-
-	UNREFERENCED_PARAMETER(onoff);
 
 	RtlInitEmptyUnicodeString(&ReadString,
 		ReadStringBuffer,
 		sizeof(ReadStringBuffer));
 
 	status = RESOURCE_HUB_CREATE_PATH_FROM_ID(&ReadString,
-		gpio.LowPart,
-		gpio.HighPart);
+		res.LowPart,
+		res.HighPart);
 	if (!NT_SUCCESS(status))
 		return status;
 
 	WDF_OBJECT_ATTRIBUTES_INIT(&ObjectAttributes);
 	ObjectAttributes.ParentObject = ctx->Device;
 
-	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, &IoTarget);
+	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, target);
 	if (!NT_SUCCESS(status)) {
 		return status;
 	}
 
-	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, GENERIC_WRITE);
-	status = WdfIoTargetOpen(IoTarget, &OpenParams);
-	if (!NT_SUCCESS(status)) {
+	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, use);
+	status = WdfIoTargetOpen(*target, &OpenParams);
+	
+	return status;
+}
+
+NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	WDFIOTARGET IoTarget;
+	WDF_MEMORY_DESCRIPTOR regDescriptor, outputDescriptor;
+	char command = (char)(reg << 3);
+	
+	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ, &IoTarget);
+	if (!NT_SUCCESS(status))
 		return status;
-	}
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, &ToWrite, 1);
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, &ToWrite, 1);
+
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
+	WdfIoTargetSendWriteSynchronously(IoTarget, NULL, &regDescriptor, NULL, NULL, NULL);
+
+
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, length);
+	WdfIoTargetSendReadSynchronously(IoTarget, NULL, &outputDescriptor, NULL, NULL, NULL);
+
+	return status;
+}
+
+NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	WDFIOTARGET IoTarget;
+	WDF_MEMORY_DESCRIPTOR regDescriptor, inputDescriptor;
+	char command = (char)((reg << 3) | 1);
+
+	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_WRITE, &IoTarget);
+	if (!NT_SUCCESS(status))
+		return status;
+
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
+	WdfIoTargetSendWriteSynchronously(IoTarget, NULL, &regDescriptor, NULL, NULL, NULL);
+
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, value, length);
+	WdfIoTargetSendWriteSynchronously(IoTarget, NULL, &inputDescriptor, NULL, NULL, NULL);
+
+	return status;
+}
+
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	WDFIOTARGET IoTarget;
+	WDF_MEMORY_DESCRIPTOR outputDescriptor;
+	
+	status = OpenIOTarget(ctx, gpio, GENERIC_READ, &IoTarget);
+	if (!NT_SUCCESS(status))
+		return status;
+
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, 1);
+
+	status = WdfIoTargetSendIoctlSynchronously(IoTarget, NULL, IOCTL_GPIO_READ_PINS, NULL, &outputDescriptor, NULL, NULL);
+
+	return status;
+}
+
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	WDFIOTARGET IoTarget;
+	WDF_MEMORY_DESCRIPTOR inputDescriptor, outputDescriptor;
+
+	status = OpenIOTarget(ctx, gpio, GENERIC_WRITE, &IoTarget);
+	if (!NT_SUCCESS(status))
+		return status;
+
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, 1);
 
 	status = WdfIoTargetSendIoctlSynchronously(IoTarget, NULL, IOCTL_GPIO_WRITE_PINS, &inputDescriptor, &outputDescriptor, NULL, NULL);
 
@@ -234,7 +296,7 @@ LumiaUSBCDevicePrepareHardware(
 	connCtx = ConnectorGetContext(devCtx->Connector);
 
 	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS Params;
-	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS_INIT(&Params, UcmTypeCPartnerUfp);
+	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS_INIT(&Params, UcmTypeCPartnerDfp);
 	Params.CurrentAdvertisement = UcmTypeCCurrentDefaultUsb;
 	UcmConnectorTypeCAttach(devCtx->Connector, &Params);
 
@@ -247,12 +309,14 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
 	UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
 	UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
-	UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSource);
+	UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSink);
 
-	SetGPIO(devCtx, devCtx->VbusGpioId, 1);
-	SetGPIO(devCtx, devCtx->PolGpioId, 0);
-	SetGPIO(devCtx, devCtx->AmselGpioId, 0); // high = HDMI only, medium (unsupported) = USB only, low = both
-	SetGPIO(devCtx, devCtx->EnGpioId, 1);
+	char value = (char)0;
+	SetGPIO(devCtx, devCtx->VbusGpioId, &value);
+	SetGPIO(devCtx, devCtx->PolGpioId, &value);
+	SetGPIO(devCtx, devCtx->AmselGpioId, &value); // high = HDMI only, medium (unsupported) = USB only, low = both
+	value = (char)1;
+	SetGPIO(devCtx, devCtx->EnGpioId, &value);
 
 	//UcmEventInitialize(&connCtx->EventSetDataRole);
 
