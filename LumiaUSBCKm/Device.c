@@ -27,10 +27,10 @@ EVT_UCM_CONNECTOR_SET_DATA_ROLE     LumiaUSBCSetDataRole;
 //EVT_WDF_DEVICE_D0_ENTRY LumiaUSBCDeviceD0Entry;
 
 
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length);
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length);
-NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value);
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value);
+NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length);
+NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length);
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, unsigned char *value);
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, unsigned char *value);
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (PAGE, LumiaUSBCKmCreateDevice)
@@ -59,7 +59,7 @@ BOOLEAN EvtInterruptIsr(
 	ULONG MessageID
 )
 {
-	UNREFERENCED_PARAMETER(MessageID);
+	UNREFERENCED_PARAMETER((Interrupt, MessageID));
 	WdfInterruptQueueWorkItemForIsr(Interrupt);
 
 	return TRUE;
@@ -72,8 +72,8 @@ void Uc120InterruptWorkItem(
 {
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
-	char registers[8];
-	char dismiss = 0xFF;
+	unsigned char registers[8];
+	unsigned char dismiss = 0xFF;
 	wchar_t buf[260];
 	ULONG data = 0;
 
@@ -105,8 +105,8 @@ void PlugDetInterruptWorkItem(
 {
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
-	char registers[8];
-//	char dismiss = 0x1;
+	unsigned char registers[8];
+//	unsigned char dismiss = 0x1;
 	wchar_t buf[260];
 	ULONG data = 0;
 
@@ -131,10 +131,53 @@ void PlugDetInterruptWorkItem(
 		sizeof(ULONG));
 }
 
+NTSTATUS Uc120InterruptEnable(
+	WDFINTERRUPT Interrupt,
+	WDFDEVICE AssociatedDevice
+)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedDevice);
+	unsigned char value;
+	UNREFERENCED_PARAMETER(Interrupt);
+
+	ReadRegister(ctx, 5, &value, 1);
+	value &= ~0x80;
+	WriteRegister(ctx, 5, &value, 1);
+
+	value = 0xFF;
+	WriteRegister(ctx, 2, &value, 1);
+	WriteRegister(ctx, 3, &value, 1);
+
+	ReadRegister(ctx, 4, &value, 1);
+	value |= 1;
+	WriteRegister(ctx, 4, &value, 1);
+
+	return status;
+}
+
+NTSTATUS Uc120InterruptDisable(
+	WDFINTERRUPT Interrupt,
+	WDFDEVICE AssociatedDevice
+)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedDevice);
+	unsigned char value;
+	UNREFERENCED_PARAMETER(Interrupt);
+
+	ReadRegister(ctx, 4, &value, 1);
+	value &= ~1;
+	WriteRegister(ctx, 4, &value, 1);
+
+	return status;
+}
+
 NTSTATUS
 LumiaUSBCProbeResources(
 	PDEVICE_CONTEXT ctx,
-	WDFCMRESLIST res
+	WDFCMRESLIST res,
+	WDFCMRESLIST rawres
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
@@ -142,6 +185,7 @@ LumiaUSBCProbeResources(
 	WDF_INTERRUPT_CONFIG Config;
 	int k = 0, l = 0;
 	int spi_found = 0;
+	ctx->HaveResetGpio = FALSE;
 	for (unsigned int i = 0; i < WdfCmResourceListGetCount(res); i++) {
 		desc = WdfCmResourceListGetDescriptor(res, i);
 		switch (desc->Type) {
@@ -168,6 +212,11 @@ LumiaUSBCProbeResources(
 					ctx->EnGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->EnGpioId.HighPart = desc->u.Connection.IdHighPart;
 					break;
+				case 4:
+					ctx->ResetGpioId.LowPart = desc->u.Connection.IdLowPart;
+					ctx->ResetGpioId.HighPart = desc->u.Connection.IdHighPart;
+					ctx->HaveResetGpio = TRUE;
+					break;
 				default:
 					break;
 				}
@@ -187,15 +236,27 @@ LumiaUSBCProbeResources(
 			{
 			case 0:
 				WDF_INTERRUPT_CONFIG_INIT(&Config, EvtInterruptIsr, NULL);
+				Config.PassiveHandling = TRUE;
 				Config.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
+				Config.InterruptRaw = WdfCmResourceListGetDescriptor(rawres, i);
 				Config.InterruptTranslated = desc;
-				WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->PlugDetectInterrupt);
+				//status = WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->PlugDetectInterrupt);
+				if (!NT_SUCCESS(status)) {
+					return status;
+				}
 				break;
 			case 1:
 				WDF_INTERRUPT_CONFIG_INIT(&Config, EvtInterruptIsr, NULL);
-				Config.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
+				Config.PassiveHandling = TRUE;
+				Config.EvtInterruptWorkItem = Uc120InterruptWorkItem;
+				Config.InterruptRaw = WdfCmResourceListGetDescriptor(rawres, i);
 				Config.InterruptTranslated = desc;
-				WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->Uc120Interrupt);
+				Config.EvtInterruptEnable = Uc120InterruptEnable;
+				Config.EvtInterruptDisable = Uc120InterruptDisable;
+				status = WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->Uc120Interrupt);
+				if (!NT_SUCCESS(status)) {
+					return status;
+				}
 				break;
 			default:
 				break;
@@ -211,7 +272,7 @@ LumiaUSBCProbeResources(
 	}
 
 	if (!spi_found || k < 4) {
-		status = 0xC0000000 + 4 * spi_found + k;
+		status = 0xC0000000 + 8 * spi_found + k;
 	}
 
 	return status;
@@ -249,12 +310,12 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 	return status;
 }
 
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length)
+NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDFIOTARGET IoTarget;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, outputDescriptor;
-	char command = (char)(reg << 3);
+	unsigned char command = (unsigned char)(reg << 3);
 	
 	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ, &IoTarget);
 	if (!NT_SUCCESS(status))
@@ -270,12 +331,12 @@ NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length)
 	return status;
 }
 
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length)
+NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDFIOTARGET IoTarget;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, inputDescriptor;
-	char command = (char)((reg << 3) | 1);
+	unsigned char command = (unsigned char)((reg << 3) | 1);
 
 	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_WRITE, &IoTarget);
 	if (!NT_SUCCESS(status))
@@ -290,7 +351,7 @@ NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, char *value, ULONG length)
 	return status;
 }
 
-NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value)
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, unsigned char *value)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDFIOTARGET IoTarget;
@@ -307,7 +368,7 @@ NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value)
 	return status;
 }
 
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, char *value)
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, unsigned char *value)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDFIOTARGET IoTarget;
@@ -339,15 +400,10 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_TYPEC_CONFIG typeCConfig;
 	UCM_CONNECTOR_PD_CONFIG pdConfig;
 	WDF_OBJECT_ATTRIBUTES attr;
-	PCONNECTOR_CONTEXT connCtx;
-
-	UNREFERENCED_PARAMETER(ResourcesRaw);
-	UNREFERENCED_PARAMETER(ResourcesTranslated);
-
 
 	devCtx = DeviceGetContext(Device);
 
-	status = LumiaUSBCProbeResources(devCtx, ResourcesTranslated);
+	status = LumiaUSBCProbeResources(devCtx, ResourcesTranslated, ResourcesRaw);
 	if (!NT_SUCCESS(status))
 		return status;
 
@@ -375,7 +431,7 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_TYPEC_CONFIG_INIT(
 		&typeCConfig,
 		UcmTypeCOperatingModeDrp,
-		UcmTypeCCurrentDefaultUsb | UcmTypeCCurrent1500mA | UcmTypeCCurrent3000mA);
+		UcmTypeCCurrentDefaultUsb);
 
 	typeCConfig.EvtSetDataRole = LumiaUSBCSetDataRole;
 
@@ -392,33 +448,128 @@ LumiaUSBCDevicePrepareHardware(
 		goto Exit;
 	}
 
-	connCtx = ConnectorGetContext(devCtx->Connector);
+	//UcmEventInitialize(&connCtx->EventSetDataRole);
+Exit:
+
+	return status;
+}
+
+// I can't believe RtlWriteRegistryValue exists, but not RtlReadRegistryValue...
+NTSTATUS MyReadRegistryValue(PCWSTR registry_path, PCWSTR value_name, ULONG type,
+	PVOID data, ULONG length)
+{
+	UNICODE_STRING valname;
+	UNICODE_STRING keyname;
+	OBJECT_ATTRIBUTES attribs;
+	PKEY_VALUE_PARTIAL_INFORMATION pinfo;
+	HANDLE handle;
+	NTSTATUS rc;
+	ULONG len, reslen;
+
+	RtlInitUnicodeString(&keyname, registry_path);
+	RtlInitUnicodeString(&valname, value_name);
+
+	InitializeObjectAttributes(&attribs, &keyname, OBJ_CASE_INSENSITIVE,
+		NULL, NULL);
+	rc = ZwOpenKey(&handle, KEY_QUERY_VALUE, &attribs);
+	if (!NT_SUCCESS(rc))
+		return 0;
+
+	len = sizeof(KEY_VALUE_PARTIAL_INFORMATION) + length;
+	pinfo = ExAllocatePool(NonPagedPool, len);
+	rc = ZwQueryValueKey(handle, &valname, KeyValuePartialInformation,
+		pinfo, len, &reslen);
+	if ((NT_SUCCESS(rc) || rc == STATUS_BUFFER_OVERFLOW) &&
+		reslen >= (sizeof(KEY_VALUE_PARTIAL_INFORMATION) - 1) &&
+		(!type || pinfo->Type == type))
+	{
+		reslen = pinfo->DataLength;
+		memcpy(data, pinfo->Data, min(length, reslen));
+	}
+	else
+		reslen = 0;
+	ExFreePool(pinfo);
+
+	ZwClose(handle);
+	return rc;
+}
+
+NTSTATUS LumiaUSBCDeviceD0Entry(
+	WDFDEVICE Device,
+	WDF_POWER_DEVICE_STATE PreviousState
+)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
+	//PCONNECTOR_CONTEXT connCtx = ConnectorGetContext(devCtx->Connector);
+	wchar_t buf[260];
+	ULONG data = 0;
+	UNREFERENCED_PARAMETER(PreviousState);
 
 	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS Params;
 	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS_INIT(&Params, UcmTypeCPartnerUfp);
 	Params.CurrentAdvertisement = UcmTypeCCurrentDefaultUsb;
 	UcmConnectorTypeCAttach(devCtx->Connector, &Params);
 
-	UCM_PD_POWER_DATA_OBJECT Pdos[1];
-	UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
+	unsigned char value = (unsigned char)0;
 
-	Pdos[0].FixedSupplyPdo.VoltageIn50mV = 100;         // 5V
-	Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 50;  // 0.5 A
-	UcmConnectorPdSourceCaps(devCtx->Connector, Pdos, 1);
-	UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
-	UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
-	UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
-	UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSource);
-
-	char value = (char)0;
-	SetGPIO(devCtx, devCtx->VbusGpioId, &value);
 	SetGPIO(devCtx, devCtx->PolGpioId, &value);
 	SetGPIO(devCtx, devCtx->AmselGpioId, &value); // high = HDMI only, medium (unsupported) = USB only, low = both
-	value = (char)1;
+	value = (unsigned char)1;
 	SetGPIO(devCtx, devCtx->EnGpioId, &value);
+	if (devCtx->HaveResetGpio)
+		SetGPIO(devCtx, devCtx->ResetGpioId, &value);
+
+	if (!NT_SUCCESS(MyReadRegistryValue(
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)L"VbusEnable",
+		REG_DWORD,
+		&data,
+		sizeof(ULONG))))
+	{
+		data = 0;
+	}
+	value = !!data;
+	SetGPIO(devCtx, devCtx->VbusGpioId, &value);
+	if (data) {
+		UCM_PD_POWER_DATA_OBJECT Pdos[1];
+		UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
+
+		Pdos[0].FixedSupplyPdo.VoltageIn50mV = 100;         // 5V
+		Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 50;  // 500 mA
+		UcmConnectorPdSourceCaps(devCtx->Connector, Pdos, 1);
+		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
+		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
+		PdParams.ChargingState = UcmChargingStateNotCharging;
+		UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
+		UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSource);
+	}
+	else
+	{
+		UCM_PD_POWER_DATA_OBJECT Pdos[1];
+		UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
+
+		Pdos[0].FixedSupplyPdo.VoltageIn50mV = 100;         // 5V
+		Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 50;  // 500 mA - can be overridden in Registry
+		if (NT_SUCCESS(MyReadRegistryValue(
+			(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+			(PCWSTR)L"ChargeCurrent",
+			REG_DWORD,
+			&data,
+			sizeof(ULONG))))
+		{
+			Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = data / 10;
+		}
+		UcmConnectorPdPartnerSourceCaps(devCtx->Connector, Pdos, 1);
+		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
+		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
+		PdParams.ChargingState = UcmChargingStateNominalCharging;
+		UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
+		UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSink);
+	}
 
 	// Initialize the UC120
-	char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B };
+	unsigned char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B };
 
 	WriteRegister(devCtx, 18, initvals + 0, 1);
 	WriteRegister(devCtx, 19, initvals + 1, 1);
@@ -431,17 +582,19 @@ LumiaUSBCDevicePrepareHardware(
 	WriteRegister(devCtx, 25, initvals + 8, 1);
 	WriteRegister(devCtx, 27, initvals + 9, 1);
 
-	value = 0xFF;
-	WriteRegister(devCtx, 2, &value, 1);
-	WriteRegister(devCtx, 3, &value, 1);
-
-	ReadRegister(devCtx, 4, &value, 1);
-	value |= 1;
+	//ReadRegister(devCtx, 4, &value, 1);
+	value = 6;
 	WriteRegister(devCtx, 4, &value, 1);
 
-	char registers[8];
-	wchar_t buf[260];
-	ULONG data = 0;
+	ReadRegister(devCtx, 5, &value, 1);
+	value |= 0x88;
+	WriteRegister(devCtx, 5, &value, 1);
+
+	//ReadRegister(devCtx, 13, &value, 1);
+	value = 2;
+	WriteRegister(devCtx, 13, &value, 1);
+
+	unsigned char registers[8];
 
 	ReadRegister(devCtx, 0, registers + 0, 1);
 	ReadRegister(devCtx, 1, registers + 1, 1);
@@ -459,10 +612,6 @@ LumiaUSBCDevicePrepareHardware(
 		REG_DWORD,
 		&data,
 		sizeof(ULONG));
-
-	//UcmEventInitialize(&connCtx->EventSetDataRole);
-
-Exit:
 
 	return status;
 }
@@ -501,8 +650,8 @@ Return Value:
 	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
 	pnpPowerCallbacks.EvtDevicePrepareHardware = LumiaUSBCDevicePrepareHardware;
 	//pnpPowerCallbacks.EvtDeviceReleaseHardware = Fdo_EvtDeviceReleaseHardware;
-	//pnpPowerCallbacks.EvtDeviceD0Entry = LumiaUSBCDeviceD0Entry;
-	//pnpPowerCallbacks.EvtDeviceD0Exit = Fdo_EvtDeviceD0Exit;
+	pnpPowerCallbacks.EvtDeviceD0Entry = LumiaUSBCDeviceD0Entry;
+	//pnpPowerCallbacks.EvtDeviceD0Exit = LumiaUSBCDeviceD0Exit;
 	//pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = Fdo_EvtDeviceSelfManagedIoInit;
 	//pnpPowerCallbacks.EvtDeviceSelfManagedIoRestart = Fdo_EvtDeviceSelfManagedIoRestart;
 	WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);

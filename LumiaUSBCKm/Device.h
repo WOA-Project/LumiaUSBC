@@ -34,6 +34,8 @@ typedef struct _DEVICE_CONTEXT
 	LARGE_INTEGER PolGpioId;
 	LARGE_INTEGER AmselGpioId;
 	LARGE_INTEGER EnGpioId;
+	LARGE_INTEGER ResetGpioId;
+	BOOLEAN HaveResetGpio;
 	WDFINTERRUPT PlugDetectInterrupt;
 	WDFINTERRUPT Uc120Interrupt;
 	WDFINTERRUPT MysteryInterrupt1;
