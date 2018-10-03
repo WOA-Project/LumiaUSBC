@@ -29,8 +29,8 @@ EVT_UCM_CONNECTOR_SET_DATA_ROLE     LumiaUSBCSetDataRole;
 
 NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length);
 NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length);
-NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, unsigned char *value);
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, unsigned char *value);
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value);
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value);
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (PAGE, LumiaUSBCKmCreateDevice)
@@ -60,6 +60,7 @@ BOOLEAN EvtInterruptIsr(
 )
 {
 	UNREFERENCED_PARAMETER((Interrupt, MessageID));
+
 	WdfInterruptQueueWorkItemForIsr(Interrupt);
 
 	return TRUE;
@@ -73,22 +74,35 @@ void Uc120InterruptWorkItem(
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 	unsigned char registers[8];
+	NTSTATUS statuses[8];
 	unsigned char dismiss = 0xFF;
 	wchar_t buf[260];
 	ULONG data = 0;
 
-	ReadRegister(ctx,  0, registers + 0, 1);
-	ReadRegister(ctx,  1, registers + 1, 1);
-	ReadRegister(ctx,  2, registers + 2, 1);
-	ReadRegister(ctx,  5, registers + 3, 1);
-	ReadRegister(ctx,  7, registers + 4, 1);
-	ReadRegister(ctx,  9, registers + 5, 1);
-	ReadRegister(ctx, 10, registers + 6, 1);
-	ReadRegister(ctx, 11, registers + 7, 1);
+	memset(registers, 0, sizeof(registers));
+	memset(statuses, 0, sizeof(statuses));
+
+	statuses[0] = ReadRegister(ctx, 0, registers + 0, 1);
+	statuses[1] = ReadRegister(ctx, 1, registers + 1, 1);
+	statuses[2] = ReadRegister(ctx, 2, registers + 2, 1);
+	statuses[3] = ReadRegister(ctx, 5, registers + 3, 1);
+	statuses[4] = ReadRegister(ctx, 7, registers + 4, 1);
+	statuses[5] = ReadRegister(ctx, 9, registers + 5, 1);
+	statuses[6] = ReadRegister(ctx, 10, registers + 6, 1);
+	statuses[7] = ReadRegister(ctx, 11, registers + 7, 1);
 
 	WriteRegister(ctx, 2, &dismiss, 1);
 
-	swprintf(buf, L"UC120_%02x%02x%02x%02x%02x%02x%02x%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+	swprintf(buf, L"UC120_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+
+	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&data,
+		sizeof(ULONG));
+
+	swprintf(buf, L"S_UC120_%08x-%08x-%08x-%08x-%08x-%08x-%08x-%08x", statuses[0], statuses[1], statuses[2], statuses[3], statuses[4], statuses[5], statuses[6], statuses[7]);
 
 	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
@@ -106,22 +120,35 @@ void PlugDetInterruptWorkItem(
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 	unsigned char registers[8];
+	NTSTATUS statuses[8];
 //	unsigned char dismiss = 0x1;
 	wchar_t buf[260];
 	ULONG data = 0;
 
-	ReadRegister(ctx, 0, registers + 0, 1);
-	ReadRegister(ctx, 1, registers + 1, 1);
-	ReadRegister(ctx, 2, registers + 2, 1);
-	ReadRegister(ctx, 5, registers + 3, 1);
-	ReadRegister(ctx, 7, registers + 4, 1);
-	ReadRegister(ctx, 9, registers + 5, 1);
-	ReadRegister(ctx, 10, registers + 6, 1);
-	ReadRegister(ctx, 11, registers + 7, 1);
+	memset(registers, 0, sizeof(registers));
+	memset(statuses, 0, sizeof(statuses));
+
+	statuses[0] = ReadRegister(ctx, 0, registers + 0, 1);
+	statuses[1] = ReadRegister(ctx, 1, registers + 1, 1);
+	statuses[2] = ReadRegister(ctx, 2, registers + 2, 1);
+	statuses[3] = ReadRegister(ctx, 5, registers + 3, 1);
+	statuses[4] = ReadRegister(ctx, 7, registers + 4, 1);
+	statuses[5] = ReadRegister(ctx, 9, registers + 5, 1);
+	statuses[6] = ReadRegister(ctx, 10, registers + 6, 1);
+	statuses[7] = ReadRegister(ctx, 11, registers + 7, 1);
 
 	//WriteRegister(ctx, 2, &dismiss, 1);
 
-	swprintf(buf, L"PLUGDET_%02x%02x%02x%02x%02x%02x%02x%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+	swprintf(buf, L"PLUGDET_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+
+	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&data,
+		sizeof(ULONG));
+
+	swprintf(buf, L"S_PLUGDET_%08x-%08x-%08x-%08x-%08x-%08x-%08x-%08x", statuses[0], statuses[1], statuses[2], statuses[3], statuses[4], statuses[5], statuses[6], statuses[7]);
 
 	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
@@ -173,6 +200,38 @@ NTSTATUS Uc120InterruptDisable(
 	return status;
 }
 
+NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, WDFIOTARGET *target)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	WDF_OBJECT_ATTRIBUTES ObjectAttributes;
+	WDF_IO_TARGET_OPEN_PARAMS OpenParams;
+	UNICODE_STRING ReadString;
+	WCHAR ReadStringBuffer[260];
+
+	RtlInitEmptyUnicodeString(&ReadString,
+		ReadStringBuffer,
+		sizeof(ReadStringBuffer));
+
+	status = RESOURCE_HUB_CREATE_PATH_FROM_ID(&ReadString,
+		res.LowPart,
+		res.HighPart);
+	if (!NT_SUCCESS(status))
+		return status;
+
+	WDF_OBJECT_ATTRIBUTES_INIT(&ObjectAttributes);
+	ObjectAttributes.ParentObject = ctx->Device;
+
+	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, target);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, use);
+	status = WdfIoTargetOpen(*target, &OpenParams);
+
+	return status;
+}
+
 NTSTATUS
 LumiaUSBCProbeResources(
 	PDEVICE_CONTEXT ctx,
@@ -199,22 +258,37 @@ LumiaUSBCProbeResources(
 				case 0:
 					ctx->VbusGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->VbusGpioId.HighPart = desc->u.Connection.IdHighPart;
+					status = OpenIOTarget(ctx, ctx->VbusGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->VbusGpio);
+					if (!NT_SUCCESS(status))
+						return status;
 					break;
 				case 1:
 					ctx->PolGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->PolGpioId.HighPart = desc->u.Connection.IdHighPart;
+					status = OpenIOTarget(ctx, ctx->PolGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->PolGpio);
+					if (!NT_SUCCESS(status))
+						return status;
 					break;
 				case 2:
 					ctx->AmselGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->AmselGpioId.HighPart = desc->u.Connection.IdHighPart;
+					status = OpenIOTarget(ctx, ctx->AmselGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->AmselGpio);
+					if (!NT_SUCCESS(status))
+						return status;
 					break;
 				case 3:
 					ctx->EnGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->EnGpioId.HighPart = desc->u.Connection.IdHighPart;
+					status = OpenIOTarget(ctx, ctx->EnGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->EnGpio);
+					if (!NT_SUCCESS(status))
+						return status;
 					break;
 				case 4:
 					ctx->ResetGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->ResetGpioId.HighPart = desc->u.Connection.IdHighPart;
+					status = OpenIOTarget(ctx, ctx->ResetGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->ResetGpio);
+					if (!NT_SUCCESS(status))
+						return status;
 					ctx->HaveResetGpio = TRUE;
 					break;
 				default:
@@ -227,6 +301,9 @@ LumiaUSBCProbeResources(
 			if (desc->u.Connection.Class == CM_RESOURCE_CONNECTION_CLASS_SERIAL && desc->u.Connection.Type == CM_RESOURCE_CONNECTION_TYPE_SERIAL_SPI) {
 				ctx->SpiId.LowPart = desc->u.Connection.IdLowPart;
 				ctx->SpiId.HighPart = desc->u.Connection.IdHighPart;
+				status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
+				if (!NT_SUCCESS(status))
+					return status;
 				spi_found = 1;
 			}
 			break;
@@ -278,55 +355,24 @@ LumiaUSBCProbeResources(
 	return status;
 }
 
-NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, WDFIOTARGET *target)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	WDF_OBJECT_ATTRIBUTES ObjectAttributes;
-	WDF_IO_TARGET_OPEN_PARAMS OpenParams;
-	UNICODE_STRING ReadString;
-	WCHAR ReadStringBuffer[260];
-
-	RtlInitEmptyUnicodeString(&ReadString,
-		ReadStringBuffer,
-		sizeof(ReadStringBuffer));
-
-	status = RESOURCE_HUB_CREATE_PATH_FROM_ID(&ReadString,
-		res.LowPart,
-		res.HighPart);
-	if (!NT_SUCCESS(status))
-		return status;
-
-	WDF_OBJECT_ATTRIBUTES_INIT(&ObjectAttributes);
-	ObjectAttributes.ParentObject = ctx->Device;
-
-	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, target);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, use);
-	status = WdfIoTargetOpen(*target, &OpenParams);
-	
-	return status;
-}
-
 NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	WDFIOTARGET IoTarget;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, outputDescriptor;
 	unsigned char command = (unsigned char)(reg << 3);
-	
-	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ, &IoTarget);
-	if (!NT_SUCCESS(status))
-		return status;
 
+	WdfObjectAcquireLock(ctx->Device);
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
-	WdfIoTargetSendWriteSynchronously(IoTarget, NULL, &regDescriptor, NULL, NULL, NULL);
-
+	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &regDescriptor, NULL, NULL, NULL);
+	if (!NT_SUCCESS(status))
+	{
+		WdfObjectReleaseLock(ctx->Device);
+		return status;
+	}
 
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, length);
-	WdfIoTargetSendReadSynchronously(IoTarget, NULL, &outputDescriptor, NULL, NULL, NULL);
+	status = WdfIoTargetSendReadSynchronously(ctx->Spi, NULL, &outputDescriptor, NULL, NULL, NULL);
+	WdfObjectReleaseLock(ctx->Device);
 
 	return status;
 }
@@ -334,54 +380,50 @@ NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG 
 NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	WDFIOTARGET IoTarget;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, inputDescriptor;
 	unsigned char command = (unsigned char)((reg << 3) | 1);
 
-	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_WRITE, &IoTarget);
-	if (!NT_SUCCESS(status))
-		return status;
-
+	WdfObjectAcquireLock(ctx->Device);
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
-	WdfIoTargetSendWriteSynchronously(IoTarget, NULL, &regDescriptor, NULL, NULL, NULL);
+	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &regDescriptor, NULL, NULL, NULL);
+	if (!NT_SUCCESS(status))
+	{
+		WdfObjectReleaseLock(ctx->Device);
+		return status;
+	}
 
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, value, length);
-	WdfIoTargetSendWriteSynchronously(IoTarget, NULL, &inputDescriptor, NULL, NULL, NULL);
+	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &inputDescriptor, NULL, NULL, NULL);
+	WdfObjectReleaseLock(ctx->Device);
 
 	return status;
 }
 
-NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, unsigned char *value)
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	WDFIOTARGET IoTarget;
 	WDF_MEMORY_DESCRIPTOR outputDescriptor;
-	
-	status = OpenIOTarget(ctx, gpio, GENERIC_READ, &IoTarget);
-	if (!NT_SUCCESS(status))
-		return status;
 
+	UNREFERENCED_PARAMETER(ctx);
+	
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, 1);
 
-	status = WdfIoTargetSendIoctlSynchronously(IoTarget, NULL, IOCTL_GPIO_READ_PINS, NULL, &outputDescriptor, NULL, NULL);
+	status = WdfIoTargetSendIoctlSynchronously(gpio, NULL, IOCTL_GPIO_READ_PINS, NULL, &outputDescriptor, NULL, NULL);
 
 	return status;
 }
 
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, LARGE_INTEGER gpio, unsigned char *value)
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	WDFIOTARGET IoTarget;
 	WDF_MEMORY_DESCRIPTOR inputDescriptor, outputDescriptor;
 
-	status = OpenIOTarget(ctx, gpio, GENERIC_WRITE, &IoTarget);
-	if (!NT_SUCCESS(status))
-		return status;
+	UNREFERENCED_PARAMETER(ctx);
 
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, value, 1);
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, 1);
 
-	status = WdfIoTargetSendIoctlSynchronously(IoTarget, NULL, IOCTL_GPIO_WRITE_PINS, &inputDescriptor, &outputDescriptor, NULL, NULL);
+	status = WdfIoTargetSendIoctlSynchronously(gpio, NULL, IOCTL_GPIO_WRITE_PINS, &inputDescriptor, &outputDescriptor, NULL, NULL);
 
 	return status;
 }
@@ -504,6 +546,8 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	//PCONNECTOR_CONTEXT connCtx = ConnectorGetContext(devCtx->Connector);
 	wchar_t buf[260];
 	ULONG data = 0;
+	LARGE_INTEGER delay;
+	ULONG i = 0;
 	UNREFERENCED_PARAMETER(PreviousState);
 
 	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS Params;
@@ -513,12 +557,12 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 
 	unsigned char value = (unsigned char)0;
 
-	SetGPIO(devCtx, devCtx->PolGpioId, &value);
-	SetGPIO(devCtx, devCtx->AmselGpioId, &value); // high = HDMI only, medium (unsupported) = USB only, low = both
+	SetGPIO(devCtx, devCtx->PolGpio, &value);
+	SetGPIO(devCtx, devCtx->AmselGpio, &value); // high = HDMI only, medium (unsupported) = USB only, low = both
 	value = (unsigned char)1;
-	SetGPIO(devCtx, devCtx->EnGpioId, &value);
+	SetGPIO(devCtx, devCtx->EnGpio, &value);
 	if (devCtx->HaveResetGpio)
-		SetGPIO(devCtx, devCtx->ResetGpioId, &value);
+		SetGPIO(devCtx, devCtx->ResetGpio, &value);
 
 	if (!NT_SUCCESS(MyReadRegistryValue(
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
@@ -530,7 +574,7 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		data = 0;
 	}
 	value = !!data;
-	SetGPIO(devCtx, devCtx->VbusGpioId, &value);
+	SetGPIO(devCtx, devCtx->VbusGpio, &value);
 	if (data) {
 		UCM_PD_POWER_DATA_OBJECT Pdos[1];
 		UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
@@ -594,19 +638,53 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	value = 2;
 	WriteRegister(devCtx, 13, &value, 1);
 
-	unsigned char registers[8];
+	delay.QuadPart = -1000000;
+	KeDelayExecutionThread(UserMode, TRUE, &delay);
+	delay.QuadPart = -100000;
+	do {
+		ReadRegister(devCtx, 5, &value, 1);
+		KeDelayExecutionThread(UserMode, TRUE, &delay);
+		i++;
+		if (i > 500) {
+			break;
+		}
+	} while (value == 0);
 
-	ReadRegister(devCtx, 0, registers + 0, 1);
-	ReadRegister(devCtx, 1, registers + 1, 1);
-	ReadRegister(devCtx, 2, registers + 2, 1);
-	ReadRegister(devCtx, 5, registers + 3, 1);
-	ReadRegister(devCtx, 7, registers + 4, 1);
-	ReadRegister(devCtx, 9, registers + 5, 1);
-	ReadRegister(devCtx, 10, registers + 6, 1);
-	ReadRegister(devCtx, 11, registers + 7, 1);
-	swprintf(buf, L"INIT_%02x%02x%02x%02x%02x%02x%02x%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+	i |= value << 16;
 
 	/*status =*/ RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)L"startdelay",
+		REG_DWORD,
+		&i,
+		sizeof(ULONG));
+
+	unsigned char registers[8];
+	NTSTATUS statuses[8];
+
+	memset(registers, 0, sizeof(registers));
+	memset(statuses, 0, sizeof(statuses));
+
+	statuses[0] = ReadRegister(devCtx, 0, registers + 0, 1);
+	statuses[1] = ReadRegister(devCtx, 1, registers + 1, 1);
+	statuses[2] = ReadRegister(devCtx, 2, registers + 2, 1);
+	statuses[3] = ReadRegister(devCtx, 5, registers + 3, 1);
+	statuses[4] = ReadRegister(devCtx, 7, registers + 4, 1);
+	statuses[5] = ReadRegister(devCtx, 9, registers + 5, 1);
+	statuses[6] = ReadRegister(devCtx, 10, registers + 6, 1);
+	statuses[7] = ReadRegister(devCtx, 11, registers + 7, 1);
+	swprintf(buf, L"INIT_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+
+	/*status =*/ RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&data,
+		sizeof(ULONG));
+
+	swprintf(buf, L"S_INIT_%08x-%08x-%08x-%08x-%08x-%08x-%08x-%08x", statuses[0], statuses[1], statuses[2], statuses[3], statuses[4], statuses[5], statuses[6], statuses[7]);
+
+	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
 		(PCWSTR)buf,
 		REG_DWORD,
