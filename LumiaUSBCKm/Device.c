@@ -287,9 +287,8 @@ LumiaUSBCProbeResources(
 					ctx->ResetGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->ResetGpioId.HighPart = desc->u.Connection.IdHighPart;
 					status = OpenIOTarget(ctx, ctx->ResetGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->ResetGpio);
-					if (!NT_SUCCESS(status))
-						return status;
-					ctx->HaveResetGpio = TRUE;
+					if (NT_SUCCESS(status))
+						ctx->HaveResetGpio = TRUE;
 					break;
 				default:
 					break;
