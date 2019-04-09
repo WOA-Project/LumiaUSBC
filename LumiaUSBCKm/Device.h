@@ -14,8 +14,6 @@ Environment:
 
 --*/
 
-#pragma once
-
 #include "public.h"
 #include <UcmCx.h>
 

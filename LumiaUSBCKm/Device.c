@@ -20,12 +20,11 @@ Environment:
 #include <reshub.h>
 #include <gpio.h>
 #include <wdf.h>
-//#include "device.h"
+
 
 EVT_WDF_DEVICE_PREPARE_HARDWARE LumiaUSBCDevicePrepareHardware;
 EVT_UCM_CONNECTOR_SET_DATA_ROLE     LumiaUSBCSetDataRole;
 //EVT_WDF_DEVICE_D0_ENTRY LumiaUSBCDeviceD0Entry;
-
 
 NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length);
 NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length);
@@ -36,7 +35,6 @@ NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value);
 #pragma alloc_text (PAGE, LumiaUSBCKmCreateDevice)
 #pragma alloc_text (PAGE, LumiaUSBCDevicePrepareHardware)
 #pragma alloc_text (PAGE, LumiaUSBCSetDataRole)
-//#pragma alloc_text (PAGE, LumiaUSBCDeviceD0Entry)
 #endif
 
 NTSTATUS
@@ -121,7 +119,7 @@ void PlugDetInterruptWorkItem(
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 	unsigned char registers[8];
 	NTSTATUS statuses[8];
-//	unsigned char dismiss = 0x1;
+	//	unsigned char dismiss = 0x1;
 	wchar_t buf[260];
 	ULONG data = 0;
 
@@ -404,7 +402,7 @@ NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
 	WDF_MEMORY_DESCRIPTOR outputDescriptor;
 
 	UNREFERENCED_PARAMETER(ctx);
-	
+
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, 1);
 
 	status = WdfIoTargetSendIoctlSynchronously(gpio, NULL, IOCTL_GPIO_READ_PINS, NULL, &outputDescriptor, NULL, NULL);
@@ -753,18 +751,17 @@ Return Value:
         // Initialize the context.
         //
 		deviceContext->Device = device;
-        deviceContext->Connector = NULL;
+		deviceContext->Connector = NULL;
 
 		UCM_MANAGER_CONFIG_INIT(&ucmConfig);
 		status = UcmInitializeDevice(device, &ucmConfig);
 		if (!NT_SUCCESS(status))
 			return status;
-
         //
         // Create a device interface so that applications can find and talk
         // to us.
         //
-        status = WdfDeviceCreateDeviceInterface(
+        /*status = WdfDeviceCreateDeviceInterface(
             device,
             &GUID_DEVINTERFACE_LumiaUSBCKm,
             NULL // ReferenceString
@@ -775,7 +772,7 @@ Return Value:
             // Initialize the I/O Package and any Queues
             //
             status = LumiaUSBCKmQueueInitialize(device);
-        }
+        }*/
     }
 
     return status;

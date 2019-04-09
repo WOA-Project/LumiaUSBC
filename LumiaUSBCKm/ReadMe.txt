@@ -26,9 +26,6 @@ Driver.c & Driver.h
 Device.c & Device.h
     WDFDEVICE related functionality and callbacks.
 
-Queue.c & Queue.h
-    WDFQUEUE related functionality and callbacks.
-
 Trace.h
     Definitions for WPP tracing.
 

@@ -17,12 +17,12 @@ Environment:
 //
 // Define the tracing flags.
 //
-// Tracing GUID - 2548c665-9a18-4c3f-95c4-83d69d20a22b
+// Tracing GUID - b65b50d8-84e9-4190-84af-5e1aff83f253
 //
 
 #define WPP_CONTROL_GUIDS                                              \
     WPP_DEFINE_CONTROL_GUID(                                           \
-        LumiaUSBCKmTraceGuid, (2548c665,9a18,4c3f,95c4,83d69d20a22b), \
+        LumiaUSBCKmTraceGuid, (b65b50d8,84e9,4190,84af,5e1aff83f253), \
                                                                             \
         WPP_DEFINE_BIT(MYDRIVER_ALL_INFO)                              \
         WPP_DEFINE_BIT(TRACE_DRIVER)                                   \
