@@ -440,11 +440,15 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_PD_CONFIG pdConfig;
 	WDF_OBJECT_ATTRIBUTES attr;
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
+
 	devCtx = DeviceGetContext(Device);
 
 	status = LumiaUSBCProbeResources(devCtx, ResourcesTranslated, ResourcesRaw);
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "LumiaUSBCProbeResources failed %!STATUS!", status);
 		return status;
+	}
 
 	if (devCtx->Connector)
 	{
@@ -459,6 +463,7 @@ LumiaUSBCDevicePrepareHardware(
 	status = UcmInitializeDevice(Device, &ucmCfg);
 	if (!NT_SUCCESS(status))
 	{
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "UcmInitializeDevice failed %!STATUS!", status);
 		goto Exit;
 	}
 
@@ -484,12 +489,13 @@ LumiaUSBCDevicePrepareHardware(
 	status = UcmConnectorCreate(Device, &connCfg, &attr, &devCtx->Connector);
 	if (!NT_SUCCESS(status))
 	{
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "UcmConnectorCreate failed %!STATUS!", status);
 		goto Exit;
 	}
 
 	//UcmEventInitialize(&connCtx->EventSetDataRole);
 Exit:
-
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit");
 	return status;
 }
 
