@@ -75,7 +75,9 @@ void Uc120InterruptWorkItem(
 	NTSTATUS statuses[8];
 	unsigned char dismiss = 0xFF;
 	wchar_t buf[260];
-	ULONG data = 0;
+	//ULONG data = 0;
+
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "Got an interrupt from the UC120!");
 
 	memset(registers, 0, sizeof(registers));
 	memset(statuses, 0, sizeof(statuses));
@@ -93,21 +95,25 @@ void Uc120InterruptWorkItem(
 
 	swprintf(buf, L"UC120_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
 
-	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%ls", buf);
+
+	/*RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
 		(PCWSTR)buf,
 		REG_DWORD,
 		&data,
-		sizeof(ULONG));
+		sizeof(ULONG));*/
 
 	swprintf(buf, L"S_UC120_%08x-%08x-%08x-%08x-%08x-%08x-%08x-%08x", statuses[0], statuses[1], statuses[2], statuses[3], statuses[4], statuses[5], statuses[6], statuses[7]);
 
-	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%ls", buf);
+
+	/*RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
 		(PCWSTR)buf,
 		REG_DWORD,
 		&data,
-		sizeof(ULONG));
+		sizeof(ULONG));*/
 }
 
 void PlugDetInterruptWorkItem(
@@ -601,7 +607,7 @@ NTSTATUS WriteRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, U
 {
 	NTSTATUS status;
 	unsigned char data;
-	unsigned char command = (unsigned char)(reg << 3);
+	unsigned char command = (unsigned char)((reg << 3) | 1);
 	LARGE_INTEGER delay;
 	int i;
 	unsigned int j;
@@ -614,7 +620,7 @@ NTSTATUS WriteRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, U
 	if (!NT_SUCCESS(status))
 		return status;
 
-	// Send the read command bit by bit, MSB first
+	// Send the write command bit by bit, MSB first
 	for (i = 7; i >= 0; i--) {
 		KeDelayExecutionThread(UserMode, TRUE, &delay);
 
@@ -912,11 +918,14 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	value = 2;
 	WriteRegister(devCtx, 13, &value, 1);
 
+	value = 0;
+
 	delay.QuadPart = -1000000;
 	KeDelayExecutionThread(UserMode, TRUE, &delay);
 	delay.QuadPart = -100000;
 	do {
-		ReadRegister(devCtx, 5, &value, 1);
+		if (!NT_SUCCESS(ReadRegister(devCtx, 5, &value, 1)))
+			TraceEvents(TRACE_LEVEL_WARNING, TRACE_DEVICE, "Failed to read register #5 in the init waiting loop!");
 		KeDelayExecutionThread(UserMode, TRUE, &delay);
 		i++;
 		if (i > 500) {
@@ -924,14 +933,16 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		}
 	} while (value == 0);
 
-	i |= value << 16;
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "UC120 initialized after %d iterations with value of %x", i, value);
 
-	/*status =*/ RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+	/*i |= value << 16;
+
+	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
 		(PCWSTR)L"startdelay",
 		REG_DWORD,
 		&i,
-		sizeof(ULONG));
+		sizeof(ULONG));*/
 
 	unsigned char registers[8];
 	NTSTATUS statuses[8];
@@ -948,22 +959,24 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	statuses[6] = ReadRegister(devCtx, 10, registers + 6, 1);
 	statuses[7] = ReadRegister(devCtx, 11, registers + 7, 1);
 	swprintf(buf, L"INIT_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%ls", buf);
 
-	/*status =*/ RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+	/*RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
 		(PCWSTR)buf,
 		REG_DWORD,
 		&data,
-		sizeof(ULONG));
+		sizeof(ULONG));*/
 
 	swprintf(buf, L"S_INIT_%08x-%08x-%08x-%08x-%08x-%08x-%08x-%08x", statuses[0], statuses[1], statuses[2], statuses[3], statuses[4], statuses[5], statuses[6], statuses[7]);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%ls", buf);
 
-	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+	/*RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
 		(PCWSTR)buf,
 		REG_DWORD,
 		&data,
-		sizeof(ULONG));
+		sizeof(ULONG));*/
 
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit");
 
