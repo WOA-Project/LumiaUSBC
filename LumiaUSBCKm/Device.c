@@ -206,6 +206,8 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 	UNICODE_STRING ReadString;
 	WCHAR ReadStringBuffer[260];
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
+
 	RtlInitEmptyUnicodeString(&ReadString,
 		ReadStringBuffer,
 		sizeof(ReadStringBuffer));
@@ -213,20 +215,27 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 	status = RESOURCE_HUB_CREATE_PATH_FROM_ID(&ReadString,
 		res.LowPart,
 		res.HighPart);
-	if (!NT_SUCCESS(status))
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "RESOURCE_HUB_CREATE_PATH_FROM_ID failed %!STATUS!", status);
 		return status;
+	}
 
 	WDF_OBJECT_ATTRIBUTES_INIT(&ObjectAttributes);
 	ObjectAttributes.ParentObject = ctx->Device;
 
 	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, target);
 	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfIoTargetCreate failed %!STATUS!", status);
 		return status;
 	}
 
 	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, use);
 	status = WdfIoTargetOpen(*target, &OpenParams);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfIoTargetOpen failed %!STATUS!", status);
+	}
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit");
 	return status;
 }
 
@@ -243,6 +252,9 @@ LumiaUSBCProbeResources(
 	int k = 0, l = 0;
 	int spi_found = 0;
 	ctx->HaveResetGpio = FALSE;
+	ctx->UseFakeSpi = FALSE;
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
+
 	for (unsigned int i = 0; i < WdfCmResourceListGetCount(res); i++) {
 		desc = WdfCmResourceListGetDescriptor(res, i);
 		switch (desc->Type) {
@@ -256,37 +268,39 @@ LumiaUSBCProbeResources(
 				case 0:
 					ctx->VbusGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->VbusGpioId.HighPart = desc->u.Connection.IdHighPart;
-					status = OpenIOTarget(ctx, ctx->VbusGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->VbusGpio);
-					if (!NT_SUCCESS(status))
-						return status;
 					break;
 				case 1:
 					ctx->PolGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->PolGpioId.HighPart = desc->u.Connection.IdHighPart;
-					status = OpenIOTarget(ctx, ctx->PolGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->PolGpio);
-					if (!NT_SUCCESS(status))
-						return status;
 					break;
 				case 2:
 					ctx->AmselGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->AmselGpioId.HighPart = desc->u.Connection.IdHighPart;
-					status = OpenIOTarget(ctx, ctx->AmselGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->AmselGpio);
-					if (!NT_SUCCESS(status))
-						return status;
 					break;
 				case 3:
 					ctx->EnGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->EnGpioId.HighPart = desc->u.Connection.IdHighPart;
-					status = OpenIOTarget(ctx, ctx->EnGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->EnGpio);
-					if (!NT_SUCCESS(status))
-						return status;
 					break;
 				case 4:
 					ctx->ResetGpioId.LowPart = desc->u.Connection.IdLowPart;
 					ctx->ResetGpioId.HighPart = desc->u.Connection.IdHighPart;
-					status = OpenIOTarget(ctx, ctx->ResetGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->ResetGpio);
-					if (NT_SUCCESS(status))
-						ctx->HaveResetGpio = TRUE;
+					ctx->HaveResetGpio = TRUE;
+					break;
+				case 5:
+					ctx->FakeSpiMosiId.LowPart = desc->u.Connection.IdLowPart;
+					ctx->FakeSpiMosiId.HighPart = desc->u.Connection.IdHighPart;
+					break;
+				case 6:
+					ctx->FakeSpiMisoId.LowPart = desc->u.Connection.IdLowPart;
+					ctx->FakeSpiMisoId.HighPart = desc->u.Connection.IdHighPart;
+					break;
+				case 7:
+					ctx->FakeSpiCsId.LowPart = desc->u.Connection.IdLowPart;
+					ctx->FakeSpiCsId.HighPart = desc->u.Connection.IdHighPart;
+					break;
+				case 8:
+					ctx->FakeSpiClkId.LowPart = desc->u.Connection.IdLowPart;
+					ctx->FakeSpiClkId.HighPart = desc->u.Connection.IdHighPart;
 					break;
 				default:
 					break;
@@ -298,9 +312,6 @@ LumiaUSBCProbeResources(
 			if (desc->u.Connection.Class == CM_RESOURCE_CONNECTION_CLASS_SERIAL && desc->u.Connection.Type == CM_RESOURCE_CONNECTION_TYPE_SERIAL_SPI) {
 				ctx->SpiId.LowPart = desc->u.Connection.IdLowPart;
 				ctx->SpiId.HighPart = desc->u.Connection.IdHighPart;
-				status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
-				if (!NT_SUCCESS(status))
-					return status;
 				spi_found = 1;
 			}
 			break;
@@ -316,6 +327,7 @@ LumiaUSBCProbeResources(
 				Config.InterruptTranslated = desc;
 				//status = WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->PlugDetectInterrupt);
 				if (!NT_SUCCESS(status)) {
+					//TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfInterruptCreate failed for plug detection %!STATUS!", status);
 					return status;
 				}
 				break;
@@ -329,6 +341,7 @@ LumiaUSBCProbeResources(
 				Config.EvtInterruptDisable = Uc120InterruptDisable;
 				status = WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->Uc120Interrupt);
 				if (!NT_SUCCESS(status)) {
+					TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfInterruptCreate failed for UC120 interrupt %!STATUS!", status);
 					return status;
 				}
 				break;
@@ -345,14 +358,98 @@ LumiaUSBCProbeResources(
 		}
 	}
 
+	if (!spi_found && k >= 8) {
+		spi_found = 1;
+		ctx->UseFakeSpi = TRUE;
+	}
+
 	if (!spi_found || k < 4) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "Not all resources were found, SPI = %d, GPIO = %d", spi_found, k);
 		status = 0xC0000000 + 8 * spi_found + k;
 	}
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit");
 	return status;
 }
 
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+NTSTATUS
+LumiaUSBCOpenResources(
+	PDEVICE_CONTEXT ctx
+)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
+
+	if (!(ctx->UseFakeSpi)) {
+		status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for SPI %!STATUS! Falling back to fake SPI.", status);
+			ctx->UseFakeSpi = TRUE;
+			status = STATUS_SUCCESS; // return status;
+		}
+	}
+
+	status = OpenIOTarget(ctx, ctx->VbusGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->VbusGpio);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for VBUS GPIO %!STATUS!", status);
+		return status;
+	}
+
+	status = OpenIOTarget(ctx, ctx->PolGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->PolGpio);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for polarity GPIO %!STATUS!", status);
+		return status;
+	}
+
+	status = OpenIOTarget(ctx, ctx->AmselGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->AmselGpio);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for alternate mode selection GPIO %!STATUS!", status);
+		return status;
+	}
+
+	status = OpenIOTarget(ctx, ctx->EnGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->EnGpio);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for mux enable GPIO %!STATUS!", status);
+		return status;
+	}
+
+	if (ctx->HaveResetGpio) {
+		status = OpenIOTarget(ctx, ctx->ResetGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->ResetGpio);
+		if (!(NT_SUCCESS(status))) {
+			TraceEvents(TRACE_LEVEL_WARNING, TRACE_DEVICE, "OpenIOTarget failed for chip reset GPIO %!STATUS!", status);
+			ctx->HaveResetGpio = FALSE;
+		}
+		status = STATUS_SUCCESS; // this GPIO is optional - make sure we never fail on it missing
+	}
+
+	if (ctx->UseFakeSpi) {
+		status = OpenIOTarget(ctx, ctx->FakeSpiMosiId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiMosi);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for fake SPI MOSI line %!STATUS!", status);
+			return status;
+		}
+		status = OpenIOTarget(ctx, ctx->FakeSpiMisoId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiMiso);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for fake SPI MISO line %!STATUS!", status);
+			return status;
+		}
+		status = OpenIOTarget(ctx, ctx->FakeSpiCsId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiCs);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for fake SPI CS# line %!STATUS!", status);
+			return status;
+		}
+		status = OpenIOTarget(ctx, ctx->FakeSpiClkId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiClk);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "OpenIOTarget failed for fake SPI clock line %!STATUS!", status);
+			return status;
+		}
+	}
+
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit");
+	return status;
+}
+
+NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, outputDescriptor;
@@ -374,7 +471,7 @@ NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG 
 	return status;
 }
 
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+NTSTATUS WriteRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, inputDescriptor;
@@ -395,6 +492,7 @@ NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG
 
 	return status;
 }
+
 
 NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
 {
@@ -423,6 +521,168 @@ NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
 	status = WdfIoTargetSendIoctlSynchronously(gpio, NULL, IOCTL_GPIO_WRITE_PINS, &inputDescriptor, &outputDescriptor, NULL, NULL);
 
 	return status;
+}
+
+NTSTATUS ReadRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+{
+	NTSTATUS status;
+	unsigned char data;
+	unsigned char command = (unsigned char)(reg << 3);
+	LARGE_INTEGER delay;
+	int i;
+	unsigned int j;
+
+	delay.QuadPart = -10; // 1ms
+
+	// Select the chip
+	data = 0;
+	status = SetGPIO(ctx, ctx->FakeSpiCs, &data);
+	if (!NT_SUCCESS(status))
+		return status;
+
+	// Send the read command bit by bit, MSB first
+	for (i = 7; i >= 0; i--) {
+		KeDelayExecutionThread(UserMode, TRUE, &delay);
+
+		data = (command >> i) & 1;
+		status = SetGPIO(ctx, ctx->FakeSpiMosi, &data);
+		if (!NT_SUCCESS(status))
+			return status;
+
+		data = 0;
+		status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
+		if (!NT_SUCCESS(status))
+			return status;
+
+		KeDelayExecutionThread(UserMode, TRUE, &delay);
+
+		data = 1;
+		status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
+		if (!NT_SUCCESS(status))
+			return status;
+	}
+
+	// Receive the result, MSB first
+	for (j = 0; j < length; j++) {
+		for (i = 7; i >= 0; i--) {
+			KeDelayExecutionThread(UserMode, TRUE, &delay);
+
+			data = 0;
+			status = GetGPIO(ctx, ctx->FakeSpiMiso, &data);
+			if (!NT_SUCCESS(status))
+				return status;
+
+			value[j] |= (data & 1) << i;
+
+			data = 0;
+			status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
+			if (!NT_SUCCESS(status))
+				return status;
+
+			KeDelayExecutionThread(UserMode, TRUE, &delay);
+
+			data = 1;
+			status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
+			if (!NT_SUCCESS(status))
+				return status;
+		}
+	}
+
+	// Deselect the chip
+	data = 1;
+	status = SetGPIO(ctx, ctx->FakeSpiCs, &data);
+	if (!NT_SUCCESS(status))
+		return status;
+
+	return status;
+}
+
+NTSTATUS WriteRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+{
+	NTSTATUS status;
+	unsigned char data;
+	unsigned char command = (unsigned char)(reg << 3);
+	LARGE_INTEGER delay;
+	int i;
+	unsigned int j;
+
+	delay.QuadPart = -10; // 1ms
+
+	// Select the chip
+	data = 0;
+	status = SetGPIO(ctx, ctx->FakeSpiCs, &data);
+	if (!NT_SUCCESS(status))
+		return status;
+
+	// Send the read command bit by bit, MSB first
+	for (i = 7; i >= 0; i--) {
+		KeDelayExecutionThread(UserMode, TRUE, &delay);
+
+		data = (command >> i) & 1;
+		status = SetGPIO(ctx, ctx->FakeSpiMosi, &data);
+		if (!NT_SUCCESS(status))
+			return status;
+
+		data = 0;
+		status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
+		if (!NT_SUCCESS(status))
+			return status;
+
+		KeDelayExecutionThread(UserMode, TRUE, &delay);
+
+		data = 1;
+		status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
+		if (!NT_SUCCESS(status))
+			return status;
+	}
+
+	// Send the data, MSB 
+	for (j = 0; j < length; j++) {
+		for (i = 7; i >= 0; i--) {
+			KeDelayExecutionThread(UserMode, TRUE, &delay);
+
+			data = (value[j] >> i) & 1;
+			status = SetGPIO(ctx, ctx->FakeSpiMosi, &data);
+			if (!NT_SUCCESS(status))
+				return status;
+
+			data = 0;
+			status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
+			if (!NT_SUCCESS(status))
+				return status;
+
+			KeDelayExecutionThread(UserMode, TRUE, &delay);
+
+			data = 1;
+			status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
+			if (!NT_SUCCESS(status))
+				return status;
+		}
+	}
+
+	// Deselect the chip
+	data = 1;
+	status = SetGPIO(ctx, ctx->FakeSpiCs, &data);
+	if (!NT_SUCCESS(status))
+		return status;
+
+	return status;
+}
+
+NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+{
+	if (ctx->UseFakeSpi)
+		return ReadRegisterFake(ctx, reg, value, length);
+	else
+		return ReadRegisterReal(ctx, reg, value, length);
+}
+
+NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+{
+	if (ctx->UseFakeSpi)
+		return WriteRegisterFake(ctx, reg, value, length);
+	else
+		return WriteRegisterReal(ctx, reg, value, length);
 }
 
 NTSTATUS
@@ -553,6 +813,14 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	ULONG i = 0;
 	UNREFERENCED_PARAMETER(PreviousState);
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
+
+	status = LumiaUSBCOpenResources(devCtx);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "LumiaUSBCOpenResources failed %!STATUS!", status);
+		return status;
+	}
+
 	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS Params;
 	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS_INIT(&Params, UcmTypeCPartnerUfp);
 	Params.CurrentAdvertisement = UcmTypeCCurrentDefaultUsb;
@@ -590,6 +858,7 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		PdParams.ChargingState = UcmChargingStateNotCharging;
 		UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
 		UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSource);
+		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
 	}
 	else
 	{
@@ -613,6 +882,8 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		PdParams.ChargingState = UcmChargingStateNominalCharging;
 		UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
 		UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSink);
+		UcmConnectorTypeCCurrentAdChanged(devCtx->Connector, UcmTypeCCurrent3000mA);
+		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
 	}
 
 	// Initialize the UC120
@@ -693,6 +964,8 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		REG_DWORD,
 		&data,
 		sizeof(ULONG));
+
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit");
 
 	return status;
 }
