@@ -19,6 +19,8 @@ Environment:
 
 EXTERN_C_START
 
+DEFINE_GUID(PowerControlGuid, 0x9942B45EL, 0x2C94, 0x41F3, 0xA1, 0x5C, 0xC1, 0xA5, 0x91, 0xC7, 4, 0x69);
+
 //
 // The device context performs the same job as
 // a WDM device extension in the driver frameworks
@@ -27,6 +29,7 @@ typedef struct _DEVICE_CONTEXT
 {
 	WDFDEVICE Device;
 	UCMCONNECTOR Connector;
+	POHANDLE PoHandle;
 	LARGE_INTEGER SpiId;
 	WDFIOTARGET Spi;
 	BOOLEAN UseFakeSpi;
