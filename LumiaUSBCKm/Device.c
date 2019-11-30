@@ -331,7 +331,7 @@ LumiaUSBCProbeResources(
 				Config.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
 				Config.InterruptRaw = WdfCmResourceListGetDescriptor(rawres, i);
 				Config.InterruptTranslated = desc;
-				status = WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->PlugDetectInterrupt);
+				//status = WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->PlugDetectInterrupt);
 				if (!NT_SUCCESS(status)) {
 					DbgPrint("WdfInterruptCreate failed for plug detection %!STATUS!\n", status);
 					return status;
@@ -339,7 +339,7 @@ LumiaUSBCProbeResources(
 				break;
 			case 1:
 				WDF_INTERRUPT_CONFIG_INIT(&Config, EvtInterruptIsr, NULL);
-				//Config.PassiveHandling = TRUE;
+				Config.PassiveHandling = TRUE;
 				Config.EvtInterruptWorkItem = Uc120InterruptWorkItem;
 				Config.InterruptRaw = WdfCmResourceListGetDescriptor(rawres, i);
 				Config.InterruptTranslated = desc;
@@ -453,6 +453,79 @@ LumiaUSBCOpenResources(
 
 	DbgPrint("%!FUNC! Exit\n");
 	return status;
+}
+
+void
+LumiaUSBCCloseResources(
+	PDEVICE_CONTEXT ctx
+)
+{
+	DbgPrint("%!FUNC! Entry\n");
+
+	if (ctx->Spi) {
+		WdfIoTargetClose(ctx->Spi);
+	}
+
+	if (ctx->VbusGpio) {
+		WdfIoTargetClose(ctx->VbusGpio);
+	}
+
+	if (ctx->PolGpio) {
+		WdfIoTargetClose(ctx->PolGpio);
+	}
+
+	if (ctx->AmselGpio) {
+		WdfIoTargetClose(ctx->AmselGpio);
+	}
+
+	if (ctx->EnGpio) {
+		WdfIoTargetClose(ctx->EnGpio);
+	}
+
+	if (ctx->ResetGpio) {
+		WdfIoTargetClose(ctx->ResetGpio);
+	}
+
+	if (ctx->FakeSpiClk) {
+		WdfIoTargetClose(ctx->FakeSpiClk);
+	}
+
+	if (ctx->FakeSpiCs) {
+		WdfIoTargetClose(ctx->FakeSpiCs);
+	}
+
+	if (ctx->FakeSpiMiso) {
+		WdfIoTargetClose(ctx->FakeSpiMiso);
+	}
+
+	if (ctx->FakeSpiMosi) {
+		WdfIoTargetClose(ctx->FakeSpiMosi);
+	}
+
+	DbgPrint("%!FUNC! Exit\n");
+}
+
+NTSTATUS LumiaUSBCDeviceD0Exit(
+	WDFDEVICE Device,
+	WDF_POWER_DEVICE_STATE TargetState
+)
+{
+	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
+	UNREFERENCED_PARAMETER(TargetState);
+
+	LumiaUSBCCloseResources(devCtx);
+
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS LumiaUSBCDeviceReleaseHardware(
+	WDFDEVICE Device,
+	WDFCMRESLIST ResourcesTranslated
+)
+{
+	UNREFERENCED_PARAMETER((Device, ResourcesTranslated));
+
+	return STATUS_SUCCESS;
 }
 
 #define IOCTL_QUP_SPI_CS_MANIPULATION 0x610
@@ -1004,21 +1077,38 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	return status;
 }
 
-void LumiaUSBCActiveConditionCallback(
-	PVOID Context,
-	ULONG Component
+NTSTATUS LumiaUSBCSelfManagedIoInit(
+	WDFDEVICE Device
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	PDEVICE_CONTEXT devCtx = DeviceGetContext((WDFDEVICE) Context);
+	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 	wchar_t buf[260];
 	unsigned char value = (unsigned char)0;
 	ULONG input[8], output[6];
 	LARGE_INTEGER delay;
 	LONG i = 0;// , j = 0;
+	PO_FX_DEVICE poFxDevice;
+	PO_FX_COMPONENT_IDLE_STATE idleState;
 
-	UNREFERENCED_PARAMETER(Component);
+	memset(&poFxDevice, 0, sizeof(poFxDevice));
+	memset(&idleState, 0, sizeof(idleState));
+	poFxDevice.Version = PO_FX_VERSION_V1;
+	poFxDevice.ComponentCount = 1;
+	poFxDevice.Components[0].IdleStateCount = 1;
+	poFxDevice.Components[0].IdleStates = &idleState;
+	poFxDevice.DeviceContext = devCtx;
+	idleState.NominalPower = PO_FX_UNKNOWN_POWER;
 
+	status = PoFxRegisterDevice(WdfDeviceWdmGetPhysicalDevice(Device), &poFxDevice, &devCtx->PoHandle);
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("PoFxRegisterDevice failed %!STATUS!\n", status);
+		return status;
+	}
+
+	PoFxActivateComponent(devCtx->PoHandle, 0, PO_FX_FLAG_BLOCKING);
+
+	PoFxStartDevicePowerManagement(devCtx->PoHandle);
 
 	// Tell PEP to turn on the clock
 	memset(input, 0, sizeof(input));
@@ -1027,7 +1117,7 @@ void LumiaUSBCActiveConditionCallback(
 	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("PoFxPowerControl failed %!STATUS!\n", status);
-		return;
+		return status;
 	}
 
 	// Initialize the UC120
@@ -1117,16 +1207,6 @@ void LumiaUSBCActiveConditionCallback(
 		sizeof(ULONG));*/
 
 	DbgPrint("%!FUNC! Exit\n");
-}
-
-NTSTATUS LumiaUSBCPostPoFxRegisterDevice(
-	WDFDEVICE Device,
-	POHANDLE PoHandle
-)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
-	devCtx->PoHandle = PoHandle;
 	return status;
 }
 
@@ -1163,10 +1243,10 @@ Return Value:
 
 	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
 	pnpPowerCallbacks.EvtDevicePrepareHardware = LumiaUSBCDevicePrepareHardware;
-	//pnpPowerCallbacks.EvtDeviceReleaseHardware = Fdo_EvtDeviceReleaseHardware;
+	pnpPowerCallbacks.EvtDeviceReleaseHardware = LumiaUSBCDeviceReleaseHardware;
 	pnpPowerCallbacks.EvtDeviceD0Entry = LumiaUSBCDeviceD0Entry;
-	//pnpPowerCallbacks.EvtDeviceD0Exit = LumiaUSBCDeviceD0Exit;
-	//pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = Fdo_EvtDeviceSelfManagedIoInit;
+	pnpPowerCallbacks.EvtDeviceD0Exit = LumiaUSBCDeviceD0Exit;
+	pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = LumiaUSBCSelfManagedIoInit;
 	//pnpPowerCallbacks.EvtDeviceSelfManagedIoRestart = Fdo_EvtDeviceSelfManagedIoRestart;
 	WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
 
@@ -1197,20 +1277,20 @@ Return Value:
 		if (!NT_SUCCESS(status))
 			return status;
 
-		WDF_POWER_FRAMEWORK_SETTINGS poFxSettings;
+		/*WDF_POWER_FRAMEWORK_SETTINGS poFxSettings;
 
 		WDF_POWER_FRAMEWORK_SETTINGS_INIT(&poFxSettings);
 
 		poFxSettings.EvtDeviceWdmPostPoFxRegisterDevice = LumiaUSBCPostPoFxRegisterDevice;
 		poFxSettings.ComponentActiveConditionCallback = LumiaUSBCActiveConditionCallback;
 
-		poFxSettings.Component = NULL; // &component;
+		poFxSettings.Component = NULL;// &component;
 		poFxSettings.PoFxDeviceContext = (PVOID)device;
 
 		status = WdfDeviceWdmAssignPowerFrameworkSettings(device, &poFxSettings);
 		if (!NT_SUCCESS(status)) {
 			return status;
-		}
+		}*/
 
 		WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS  idleSettings;
 
@@ -1218,7 +1298,7 @@ Return Value:
 			&idleSettings,
 			IdleCannotWakeFromS0
 		);
-		idleSettings.IdleTimeoutType = SystemManagedIdleTimeout;
+		idleSettings.IdleTimeoutType = DriverManagedIdleTimeout;
 
 		status = WdfDeviceAssignS0IdleSettings(
 			device,
