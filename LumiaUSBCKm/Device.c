@@ -1663,7 +1663,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	PoFxStartDevicePowerManagement(devCtx->PoHandle);
 
 	// Initialize the UC120
-	unsigned char initvals[] = { 0x02, 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0D, 0x7D, 0x32, 0x5F, 0x9E };
+	unsigned char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0D, 0x7D, 0x32, 0x5F, 0x9E };
 
 	UC120_D0Entry(devCtx);
 	UC120_UploadCalibrationData(devCtx, initvals, sizeof(initvals));
