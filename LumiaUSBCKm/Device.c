@@ -259,7 +259,7 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, DWORD context)
 		goto Exit;
 	}*/
 
-	data = registers[5];
+	data = registers[3];
 	newPowerRole = (unsigned int)data & 1u; // 0
 	newDataRole = (((unsigned int)data >> 2) & 1u); // 2
 	vconnRoleSwitch = (((unsigned int)data >> 5) & 1u); // 5
