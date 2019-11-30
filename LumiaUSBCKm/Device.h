@@ -54,8 +54,6 @@ typedef struct _DEVICE_CONTEXT
 	BOOLEAN HaveResetGpio;
 	WDFINTERRUPT PlugDetectInterrupt;
 	WDFINTERRUPT Uc120Interrupt;
-	WDFINTERRUPT MysteryInterrupt1;
-	WDFINTERRUPT MysteryInterrupt2;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
 typedef struct _CONNECTOR_CONTEXT

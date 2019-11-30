@@ -2,15 +2,15 @@
 
 Module Name:
 
-    device.c - Device handling events for example driver.
+	device.c - Device handling events for example driver.
 
 Abstract:
 
    This file contains the device entry points and callbacks.
-    
+
 Environment:
 
-    Kernel-mode Driver Framework
+	Kernel-mode Driver Framework
 
 --*/
 
@@ -24,18 +24,545 @@ Environment:
 
 EVT_WDF_DEVICE_PREPARE_HARDWARE LumiaUSBCDevicePrepareHardware;
 EVT_UCM_CONNECTOR_SET_DATA_ROLE     LumiaUSBCSetDataRole;
-//EVT_WDF_DEVICE_D0_ENTRY LumiaUSBCDeviceD0Entry;
+EVT_WDF_DEVICE_D0_ENTRY LumiaUSBCDeviceD0Entry;
 
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length);
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length);
-NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value);
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value);
+NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length);
+NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length);
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value);
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value);
+
+BOOLEAN EvtInterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID);
+void Uc120InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
+void PlugDetInterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
+NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device);
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (PAGE, LumiaUSBCKmCreateDevice)
 #pragma alloc_text (PAGE, LumiaUSBCDevicePrepareHardware)
 #pragma alloc_text (PAGE, LumiaUSBCSetDataRole)
+
+#pragma alloc_text (PAGE, EvtInterruptIsr)
+#pragma alloc_text (PAGE, Uc120InterruptWorkItem)
+#pragma alloc_text (PAGE, PlugDetInterruptWorkItem)
 #endif
+
+#pragma region UC120 Communication
+
+NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, DWORD context)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	unsigned char value = 0;
+	wchar_t buf[260];
+
+	PCWSTR contextStr = L"REG";
+	if (context == 0)
+	{
+		contextStr = L"INIT";
+	}
+	else if (context == 1)
+	{
+		contextStr = L"PLUGDET";
+	}
+	else if (context == 2)
+	{
+		contextStr = L"UC120";
+	}
+
+	unsigned char registers[8];
+
+	memset(registers, 0, sizeof(registers));
+
+	status = ReadRegister(deviceContext, 0, registers + 0, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 1, registers + 1, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 2, registers + 2, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 5, registers + 3, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 7, registers + 4, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 9, registers + 5, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 10, registers + 6, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 11, registers + 7, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	swprintf(buf, L"%ls_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", contextStr, registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+	DbgPrint("LumiaUSBC: %ls\n", buf);
+
+	value = 0;
+	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&value,
+		sizeof(ULONG));
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+Exit:
+	return status;
+}
+
+NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, DWORD context)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	unsigned char data = 0;
+	wchar_t buf[260];
+	ULONG outgoingMessageSize, incomingMessageSize, isCableConnected, newPowerRole, newDataRole, vconnRoleSwitch = 0;
+
+	PCWSTR contextStr = L"REG";
+	if (context == 0)
+	{
+		contextStr = L"INIT";
+	}
+	else if (context == 1)
+	{
+		contextStr = L"PLUGDET";
+	}
+	else if (context == 2)
+	{
+		contextStr = L"UC120";
+	}
+
+	unsigned char registers[8];
+
+	memset(registers, 0, sizeof(registers));
+
+	status = ReadRegister(deviceContext, 0, registers + 0, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 1, registers + 1, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 2, registers + 2, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 5, registers + 3, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 7, registers + 4, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 9, registers + 5, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 10, registers + 6, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 11, registers + 7, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	swprintf(buf, L"%ls_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", contextStr, registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
+	DbgPrint("LumiaUSBC: %ls\n", buf);
+
+	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&data,
+		sizeof(ULONG));
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	/*status = ReadRegister(deviceContext, 0, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}*/
+
+	data = registers[0];
+	outgoingMessageSize = data & 31u; // 0-4
+
+	/*status = ReadRegister(deviceContext, 1, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}*/
+
+	data = registers[1];
+	incomingMessageSize = data & 31u; // 0-4
+
+	/*status = ReadRegister(deviceContext, 2, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}*/
+
+	data = registers[2];
+	isCableConnected = (data & 60u) >> 2u; // 2-5
+
+	/*status = ReadRegister(deviceContext, 5, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}*/
+
+	data = registers[5];
+	newPowerRole = (unsigned int)data & 1u; // 0
+	newDataRole = (((unsigned int)data >> 2) & 1u); // 2
+	vconnRoleSwitch = (((unsigned int)data >> 5) & 1u); // 5
+
+	swprintf(buf, L"%ls_%05x-%05x-%04x-%01x-%01x-%01x", contextStr, outgoingMessageSize, incomingMessageSize, isCableConnected, newPowerRole, newDataRole, vconnRoleSwitch);
+	DbgPrint("LumiaUSBC: %ls\n", buf);
+
+	data = 0;
+	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		(PCWSTR)buf,
+		REG_DWORD,
+		&data,
+		sizeof(ULONG));
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		L"NewPowerRole",
+		REG_DWORD,
+		&newPowerRole,
+		sizeof(ULONG));
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		L"NewDataRole",
+		REG_DWORD,
+		&newDataRole,
+		sizeof(ULONG));
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		L"VconnRoleSwitch",
+		REG_DWORD,
+		&vconnRoleSwitch,
+		sizeof(ULONG));
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+Exit:
+	return status;
+}
+
+NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	unsigned char data = 0;
+
+	data = 0xFF; // Clear to 0xFF
+	status = WriteRegister(deviceContext, 2, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+Exit:
+	return status;
+}
+
+NTSTATUS UC120_InterruptsEnable(PDEVICE_CONTEXT deviceContext)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	unsigned char data = 0;
+
+	data = 0xFF; // Clear to 0xFF
+	status = WriteRegister(deviceContext, 2, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = WriteRegister(deviceContext, 3, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 4, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	data |= 1; // Turn on bit 1
+	status = WriteRegister(deviceContext, 4, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 5, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	data &= ~0x80; // Clear bit 7
+	status = WriteRegister(deviceContext, 5, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+Exit:
+	return status;
+}
+
+NTSTATUS UC120_InterruptsDisable(PDEVICE_CONTEXT deviceContext)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	unsigned char data = 0;
+
+	status = ReadRegister(deviceContext, 4, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	data &= ~1; // Turn off bit 1
+	status = WriteRegister(deviceContext, 4, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+Exit:
+	return status;
+}
+
+NTSTATUS UC120_D0Entry(PDEVICE_CONTEXT deviceContext)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	unsigned char data = 0;
+
+	status = ReadRegister(deviceContext, 4, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+	data |= 6; // Turn on bit 1 and 2
+	status = WriteRegister(deviceContext, 4, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 5, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+	data |= 88; // Turn on bit 3 and 7
+	status = WriteRegister(deviceContext, 5, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+	status = ReadRegister(deviceContext, 13, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+	data |= 2; // Turn on bit 1
+	data &= ~1; // Turn off bit 0
+	status = WriteRegister(deviceContext, 13, &data, 1);
+	if (!NT_SUCCESS(status))
+	{
+		goto Exit;
+	}
+
+Exit:
+	return status;
+}
+
+NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned char* calibrationFile, DWORD length)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	switch (length)
+	{
+	case 10:
+	{
+		status = WriteRegister(deviceContext, 18, calibrationFile + 0, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 19, calibrationFile + 1, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 20, calibrationFile + 2, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 21, calibrationFile + 3, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 26, calibrationFile + 4, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 22, calibrationFile + 5, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 23, calibrationFile + 6, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 24, calibrationFile + 7, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 25, calibrationFile + 8, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 27, calibrationFile + 9, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		break;
+	}
+	case 8:
+	{
+		status = WriteRegister(deviceContext, 18, calibrationFile + 0, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 19, calibrationFile + 1, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 20, calibrationFile + 2, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 21, calibrationFile + 3, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 22, calibrationFile + 4, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 23, calibrationFile + 5, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 24, calibrationFile + 6, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		status = WriteRegister(deviceContext, 25, calibrationFile + 7, 1);
+		if (!NT_SUCCESS(status))
+		{
+			goto Exit;
+		}
+		break;
+	}
+	default:
+	{
+		status = STATUS_BAD_DATA;
+		goto Exit;
+	}
+	}
+
+Exit:
+	return status;
+}
+
+#pragma endregion
 
 NTSTATUS
 LumiaUSBCSetDataRole(
@@ -57,7 +584,7 @@ BOOLEAN EvtInterruptIsr(
 	ULONG MessageID
 )
 {
-	UNREFERENCED_PARAMETER((Interrupt, MessageID));
+	UNREFERENCED_PARAMETER(MessageID);
 
 	WdfInterruptQueueWorkItemForIsr(Interrupt);
 
@@ -71,49 +598,12 @@ void Uc120InterruptWorkItem(
 {
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
-	unsigned char registers[8];
-	NTSTATUS statuses[8];
-	unsigned char dismiss = 0xFF;
-	wchar_t buf[260];
-	//ULONG data = 0;
 
-	DbgPrint("Got an interrupt from the UC120!\n");
+	DbgPrint("LumiaUSBC: Got an interrupt from the UC120!\n");
 
-	memset(registers, 0, sizeof(registers));
-	memset(statuses, 0, sizeof(statuses));
-
-	statuses[0] = ReadRegister(ctx, 0, registers + 0, 1);
-	statuses[1] = ReadRegister(ctx, 1, registers + 1, 1);
-	statuses[2] = ReadRegister(ctx, 2, registers + 2, 1);
-	statuses[3] = ReadRegister(ctx, 5, registers + 3, 1);
-	statuses[4] = ReadRegister(ctx, 7, registers + 4, 1);
-	statuses[5] = ReadRegister(ctx, 9, registers + 5, 1);
-	statuses[6] = ReadRegister(ctx, 10, registers + 6, 1);
-	statuses[7] = ReadRegister(ctx, 11, registers + 7, 1);
-
-	WriteRegister(ctx, 2, &dismiss, 1);
-
-	swprintf(buf, L"UC120_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
-
-	DbgPrint("%ls\n", buf);
-
-	/*RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&data,
-		sizeof(ULONG));*/
-
-	swprintf(buf, L"S_UC120_%08x-%08x-%08x-%08x-%08x-%08x-%08x-%08x", statuses[0], statuses[1], statuses[2], statuses[3], statuses[4], statuses[5], statuses[6], statuses[7]);
-
-	DbgPrint("%ls\n", buf);
-
-	/*RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&data,
-		sizeof(ULONG));*/
+	//UC120_GetCurrentRegisters(ctx, 2);
+	UC120_GetCurrentState(ctx, 2);
+	UC120_InterruptHandled(ctx);
 }
 
 void PlugDetInterruptWorkItem(
@@ -123,43 +613,12 @@ void PlugDetInterruptWorkItem(
 {
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
-	unsigned char registers[8];
-	NTSTATUS statuses[8];
-	//	unsigned char dismiss = 0x1;
-	wchar_t buf[260];
-	ULONG data = 0;
 
-	memset(registers, 0, sizeof(registers));
-	memset(statuses, 0, sizeof(statuses));
+	DbgPrint("LumiaUSBC: Got an interrupt from PLUGDET!\n");
 
-	statuses[0] = ReadRegister(ctx, 0, registers + 0, 1);
-	statuses[1] = ReadRegister(ctx, 1, registers + 1, 1);
-	statuses[2] = ReadRegister(ctx, 2, registers + 2, 1);
-	statuses[3] = ReadRegister(ctx, 5, registers + 3, 1);
-	statuses[4] = ReadRegister(ctx, 7, registers + 4, 1);
-	statuses[5] = ReadRegister(ctx, 9, registers + 5, 1);
-	statuses[6] = ReadRegister(ctx, 10, registers + 6, 1);
-	statuses[7] = ReadRegister(ctx, 11, registers + 7, 1);
-
-	//WriteRegister(ctx, 2, &dismiss, 1);
-
-	swprintf(buf, L"PLUGDET_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
-
-	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&data,
-		sizeof(ULONG));
-
-	swprintf(buf, L"S_PLUGDET_%08x-%08x-%08x-%08x-%08x-%08x-%08x-%08x", statuses[0], statuses[1], statuses[2], statuses[3], statuses[4], statuses[5], statuses[6], statuses[7]);
-
-	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&data,
-		sizeof(ULONG));
+	//UC120_GetCurrentRegisters(ctx, 1);
+	UC120_GetCurrentState(ctx, 1);
+	UC120_InterruptHandled(ctx);
 }
 
 NTSTATUS Uc120InterruptEnable(
@@ -169,20 +628,9 @@ NTSTATUS Uc120InterruptEnable(
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedDevice);
-	unsigned char value;
 	UNREFERENCED_PARAMETER(Interrupt);
 
-	value = 0xFF;
-	WriteRegister(ctx, 2, &value, 1);
-	WriteRegister(ctx, 3, &value, 1);
-
-	ReadRegister(ctx, 4, &value, 1);
-	value |= 1;
-	WriteRegister(ctx, 4, &value, 1);
-
-	ReadRegister(ctx, 5, &value, 1);
-	value &= ~0x80;
-	WriteRegister(ctx, 5, &value, 1);
+	status = UC120_InterruptsEnable(ctx);
 
 	return status;
 }
@@ -194,17 +642,14 @@ NTSTATUS Uc120InterruptDisable(
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedDevice);
-	unsigned char value;
 	UNREFERENCED_PARAMETER(Interrupt);
 
-	ReadRegister(ctx, 4, &value, 1);
-	value &= ~1;
-	WriteRegister(ctx, 4, &value, 1);
+	status = UC120_InterruptsDisable(ctx);
 
 	return status;
 }
 
-NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, WDFIOTARGET *target)
+NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, WDFIOTARGET* target)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_OBJECT_ATTRIBUTES ObjectAttributes;
@@ -212,7 +657,7 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 	UNICODE_STRING ReadString;
 	WCHAR ReadStringBuffer[260];
 
-	DbgPrint("%!FUNC! Entry");
+	DbgPrint("LumiaUSBC: OpenIOTarget Entry\n");
 
 	RtlInitEmptyUnicodeString(&ReadString,
 		ReadStringBuffer,
@@ -222,7 +667,7 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 		res.LowPart,
 		res.HighPart);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("RESOURCE_HUB_CREATE_PATH_FROM_ID failed %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: RESOURCE_HUB_CREATE_PATH_FROM_ID failed %x\n", status);
 		return status;
 	}
 
@@ -231,150 +676,209 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 
 	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, target);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("WdfIoTargetCreate failed %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: WdfIoTargetCreate failed %x\n", status);
 		return status;
 	}
 
 	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, use);
 	status = WdfIoTargetOpen(*target, &OpenParams);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("WdfIoTargetOpen failed %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: WdfIoTargetOpen failed %x\n", status);
 	}
 
-	DbgPrint("%!FUNC! Exit\n");
+	DbgPrint("LumiaUSBC: OpenIOTarget Exit\n");
 	return status;
 }
 
 NTSTATUS
 LumiaUSBCProbeResources(
-	PDEVICE_CONTEXT ctx,
-	WDFCMRESLIST res,
-	WDFCMRESLIST rawres
+	PDEVICE_CONTEXT DeviceContext,
+	WDFCMRESLIST ResourcesTranslated,
+	WDFCMRESLIST ResourcesRaw
 )
 {
+	PAGED_CODE();
+
+	DeviceContext->HaveResetGpio = FALSE;
+	DeviceContext->UseFakeSpi = FALSE;
+
 	NTSTATUS status = STATUS_SUCCESS;
-	PCM_PARTIAL_RESOURCE_DESCRIPTOR  desc;
-	WDF_INTERRUPT_CONFIG Config;
-	int k = 0, l = 0;
-	int spi_found = 0;
-	ctx->HaveResetGpio = FALSE;
-	ctx->UseFakeSpi = FALSE;
-	DbgPrint("%!FUNC! Entry\n");
+	WDF_INTERRUPT_CONFIG interruptConfig;
+	WDF_INTERRUPT_CONFIG interruptConfig2;
+	PCM_PARTIAL_RESOURCE_DESCRIPTOR descriptor = NULL;
 
-	for (unsigned int i = 0; i < WdfCmResourceListGetCount(res); i++) {
-		desc = WdfCmResourceListGetDescriptor(res, i);
-		switch (desc->Type) {
+	BOOLEAN spiFound = FALSE;
+	ULONG gpioFound = 0;
+	ULONG interruptFound = 0;
 
+	ULONG UC120Interrupt = 0;
+	ULONG PlugDetInterrupt = 0;
+
+	ULONG resourceCount;
+
+	DbgPrint("LumiaUSBC: LumiaUSBCProbeResources Entry\n");
+
+	resourceCount = WdfCmResourceListGetCount(ResourcesTranslated);
+
+	for (ULONG i = 0; i < resourceCount; i++)
+	{
+		descriptor = WdfCmResourceListGetDescriptor(ResourcesTranslated, i);
+
+		switch (descriptor->Type)
+		{
 		case CmResourceTypeConnection:
-			//
-			// Handle memory resources here.
-			//
-			if (desc->u.Connection.Class == CM_RESOURCE_CONNECTION_CLASS_GPIO && desc->u.Connection.Type == CM_RESOURCE_CONNECTION_TYPE_GPIO_IO) {
-				switch (k) {
+			// Check for GPIO resource
+			if (descriptor->u.Connection.Class == CM_RESOURCE_CONNECTION_CLASS_GPIO &&
+				descriptor->u.Connection.Type == CM_RESOURCE_CONNECTION_TYPE_GPIO_IO)
+			{
+				switch (gpioFound) {
 				case 0:
-					ctx->VbusGpioId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->VbusGpioId.HighPart = desc->u.Connection.IdHighPart;
+					DeviceContext->VbusGpioId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->VbusGpioId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
 				case 1:
-					ctx->PolGpioId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->PolGpioId.HighPart = desc->u.Connection.IdHighPart;
+					DeviceContext->PolGpioId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->PolGpioId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
 				case 2:
-					ctx->AmselGpioId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->AmselGpioId.HighPart = desc->u.Connection.IdHighPart;
+					DeviceContext->AmselGpioId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->AmselGpioId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
 				case 3:
-					ctx->EnGpioId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->EnGpioId.HighPart = desc->u.Connection.IdHighPart;
+					DeviceContext->EnGpioId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->EnGpioId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
 				case 4:
-					ctx->ResetGpioId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->ResetGpioId.HighPart = desc->u.Connection.IdHighPart;
-					ctx->HaveResetGpio = TRUE;
+					DeviceContext->ResetGpioId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->ResetGpioId.HighPart = descriptor->u.Connection.IdHighPart;
+					DeviceContext->HaveResetGpio = TRUE;
 					break;
 				case 5:
-					ctx->FakeSpiMosiId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->FakeSpiMosiId.HighPart = desc->u.Connection.IdHighPart;
+					DeviceContext->FakeSpiMosiId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->FakeSpiMosiId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
 				case 6:
-					ctx->FakeSpiMisoId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->FakeSpiMisoId.HighPart = desc->u.Connection.IdHighPart;
+					DeviceContext->FakeSpiMisoId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->FakeSpiMisoId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
 				case 7:
-					ctx->FakeSpiCsId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->FakeSpiCsId.HighPart = desc->u.Connection.IdHighPart;
+					DeviceContext->FakeSpiCsId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->FakeSpiCsId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
 				case 8:
-					ctx->FakeSpiClkId.LowPart = desc->u.Connection.IdLowPart;
-					ctx->FakeSpiClkId.HighPart = desc->u.Connection.IdHighPart;
+					DeviceContext->FakeSpiClkId.LowPart = descriptor->u.Connection.IdLowPart;
+					DeviceContext->FakeSpiClkId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
 				default:
 					break;
 				}
 
-				k++;
-			}
+				DbgPrint("LumiaUSBC: Found GPIO resource id=%lu index=%lu\n", gpioFound, i);
 
-			if (desc->u.Connection.Class == CM_RESOURCE_CONNECTION_CLASS_SERIAL && desc->u.Connection.Type == CM_RESOURCE_CONNECTION_TYPE_SERIAL_SPI) {
-				ctx->SpiId.LowPart = desc->u.Connection.IdLowPart;
-				ctx->SpiId.HighPart = desc->u.Connection.IdHighPart;
-				spi_found = 1;
+				gpioFound++;
+			}
+			// Check for SPI resource
+			else if (descriptor->u.Connection.Class == CM_RESOURCE_CONNECTION_CLASS_SERIAL &&
+				descriptor->u.Connection.Type == CM_RESOURCE_CONNECTION_TYPE_SERIAL_SPI)
+			{
+				DeviceContext->SpiId.LowPart = descriptor->u.Connection.IdLowPart;
+				DeviceContext->SpiId.HighPart = descriptor->u.Connection.IdHighPart;
+
+				DbgPrint("LumiaUSBC: Found SPI resource index=%lu\n", i);
+
+				spiFound = TRUE;
 			}
 			break;
 
 		case CmResourceTypeInterrupt:
-			switch (l)
+			// We've found an interrupt resource.
+			
+			switch (interruptFound)
 			{
-			case 0:
-				WDF_INTERRUPT_CONFIG_INIT(&Config, EvtInterruptIsr, NULL);
-				//Config.PassiveHandling = TRUE;
-				Config.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
-				Config.InterruptRaw = WdfCmResourceListGetDescriptor(rawres, i);
-				Config.InterruptTranslated = desc;
-				//status = WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->PlugDetectInterrupt);
-				if (!NT_SUCCESS(status)) {
-					DbgPrint("WdfInterruptCreate failed for plug detection %!STATUS!\n", status);
-					return status;
-				}
+			case 2:
+				PlugDetInterrupt = i;
 				break;
-			case 1:
-				WDF_INTERRUPT_CONFIG_INIT(&Config, EvtInterruptIsr, NULL);
-				Config.PassiveHandling = TRUE;
-				Config.EvtInterruptWorkItem = Uc120InterruptWorkItem;
-				Config.InterruptRaw = WdfCmResourceListGetDescriptor(rawres, i);
-				Config.InterruptTranslated = desc;
-				Config.EvtInterruptEnable = Uc120InterruptEnable;
-				Config.EvtInterruptDisable = Uc120InterruptDisable;
-				status = WdfInterruptCreate(ctx->Device, &Config, WDF_NO_OBJECT_ATTRIBUTES, &ctx->Uc120Interrupt);
-				if (!NT_SUCCESS(status)) {
-					DbgPrint("WdfInterruptCreate failed for UC120 interrupt %!STATUS!\n", status);
-					return status;
-				}
+			case 3:
+				UC120Interrupt = i;
 				break;
 			default:
 				break;
 			}
-			l++;
+
+			DbgPrint("LumiaUSBC: Found Interrupt resource id=%lu index=%lu\n", interruptFound, i);
+
+			interruptFound++;
 			break;
+
 		default:
-			//
-			// Ignore all other descriptors.
-			//
+			// We don't care about other descriptors.
 			break;
 		}
 	}
 
-	if (!spi_found && k >= 8) {
-		spi_found = 1;
-		ctx->UseFakeSpi = TRUE;
+	if (!spiFound && gpioFound >= 8)
+	{
+		spiFound = TRUE;
+		DeviceContext->UseFakeSpi = TRUE;
 	}
 
-	if (!spi_found || k < 4) {
-		DbgPrint("Not all resources were found, SPI = %d, GPIO = %d\n", spi_found, k);
-		status = 0xC0000000 + 8 * spi_found + k;
+	if (!spiFound || gpioFound < 4)
+	{
+		DbgPrint("LumiaUSBC: Not all resources were found, SPI = %d, GPIO = %d, Interrupts = %d\n", spiFound, gpioFound, interruptFound);
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Exit;
 	}
 
-	DbgPrint("%!FUNC! Exit\n");
+	if (interruptFound < 4)
+	{
+		DbgPrint("LumiaUSBC: Not all resources were found, SPI = %d, GPIO = %d, Interrupts = %d\n", spiFound, gpioFound, interruptFound);
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Exit;
+	}
+
+	WDF_INTERRUPT_CONFIG_INIT(&interruptConfig, EvtInterruptIsr, NULL);
+
+	interruptConfig.PassiveHandling = TRUE;
+	interruptConfig.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, UC120Interrupt);
+	interruptConfig.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, UC120Interrupt);
+
+	interruptConfig.EvtInterruptWorkItem = Uc120InterruptWorkItem;
+	//interruptConfig.EvtInterruptEnable = Uc120InterruptEnable;
+	interruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
+
+	status = WdfInterruptCreate(
+		DeviceContext->Device,
+		&interruptConfig,
+		WDF_NO_OBJECT_ATTRIBUTES,
+		&DeviceContext->Uc120Interrupt);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for UC120 interrupt %x\n", status);
+		goto Exit;
+	}
+
+	WDF_INTERRUPT_CONFIG_INIT(&interruptConfig2, EvtInterruptIsr, NULL);
+
+	interruptConfig2.PassiveHandling = TRUE;
+	interruptConfig2.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, PlugDetInterrupt);
+	interruptConfig2.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, PlugDetInterrupt);
+
+	interruptConfig2.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
+
+	status = WdfInterruptCreate(
+		DeviceContext->Device,
+		&interruptConfig2,
+		WDF_NO_OBJECT_ATTRIBUTES,
+		&DeviceContext->PlugDetectInterrupt);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for plug detection %x\n", status);
+		goto Exit;
+	}
+
+	DbgPrint("LumiaUSBC: LumiaUSBCProbeResources Exit: %x\n", status);
+
+Exit:
 	return status;
 }
 
@@ -384,12 +888,12 @@ LumiaUSBCOpenResources(
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("%!FUNC! Entry\n");
+	DbgPrint("LumiaUSBC: LumiaUSBCOpenResources Entry\n");
 
 	if (!(ctx->UseFakeSpi)) {
 		status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
 		if (!NT_SUCCESS(status)) {
-			DbgPrint("OpenIOTarget failed for SPI %!STATUS! Falling back to fake SPI.\n", status);
+			DbgPrint("LumiaUSBC: OpenIOTarget failed for SPI %x Falling back to fake SPI.\n", status);
 			ctx->UseFakeSpi = TRUE;
 			status = STATUS_SUCCESS; // return status;
 		}
@@ -397,32 +901,32 @@ LumiaUSBCOpenResources(
 
 	status = OpenIOTarget(ctx, ctx->VbusGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->VbusGpio);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("OpenIOTarget failed for VBUS GPIO %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: OpenIOTarget failed for VBUS GPIO %x\n", status);
 		return status;
 	}
 
 	status = OpenIOTarget(ctx, ctx->PolGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->PolGpio);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("OpenIOTarget failed for polarity GPIO %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: OpenIOTarget failed for polarity GPIO %x\n", status);
 		return status;
 	}
 
 	status = OpenIOTarget(ctx, ctx->AmselGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->AmselGpio);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("OpenIOTarget failed for alternate mode selection GPIO %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: OpenIOTarget failed for alternate mode selection GPIO %x\n", status);
 		return status;
 	}
 
 	status = OpenIOTarget(ctx, ctx->EnGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->EnGpio);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("OpenIOTarget failed for mux enable GPIO %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: OpenIOTarget failed for mux enable GPIO %x\n", status);
 		return status;
 	}
 
 	if (ctx->HaveResetGpio) {
 		status = OpenIOTarget(ctx, ctx->ResetGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->ResetGpio);
 		if (!(NT_SUCCESS(status))) {
-			DbgPrint("OpenIOTarget failed for chip reset GPIO %!STATUS!\n", status);
+			DbgPrint("LumiaUSBC: OpenIOTarget failed for chip reset GPIO %x\n", status);
 			ctx->HaveResetGpio = FALSE;
 		}
 		status = STATUS_SUCCESS; // this GPIO is optional - make sure we never fail on it missing
@@ -431,27 +935,27 @@ LumiaUSBCOpenResources(
 	if (ctx->UseFakeSpi) {
 		status = OpenIOTarget(ctx, ctx->FakeSpiMosiId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiMosi);
 		if (!NT_SUCCESS(status)) {
-			DbgPrint("OpenIOTarget failed for fake SPI MOSI line %!STATUS!\n", status);
+			DbgPrint("LumiaUSBC: OpenIOTarget failed for fake SPI MOSI line %x\n", status);
 			return status;
 		}
 		status = OpenIOTarget(ctx, ctx->FakeSpiMisoId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiMiso);
 		if (!NT_SUCCESS(status)) {
-			DbgPrint("OpenIOTarget failed for fake SPI MISO line %!STATUS!\n", status);
+			DbgPrint("LumiaUSBC: OpenIOTarget failed for fake SPI MISO line %x\n", status);
 			return status;
 		}
 		status = OpenIOTarget(ctx, ctx->FakeSpiCsId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiCs);
 		if (!NT_SUCCESS(status)) {
-			DbgPrint("OpenIOTarget failed for fake SPI CS# line %!STATUS!\n", status);
+			DbgPrint("LumiaUSBC: OpenIOTarget failed for fake SPI CS# line %x\n", status);
 			return status;
 		}
 		status = OpenIOTarget(ctx, ctx->FakeSpiClkId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiClk);
 		if (!NT_SUCCESS(status)) {
-			DbgPrint("OpenIOTarget failed for fake SPI clock line %!STATUS!\n", status);
+			DbgPrint("LumiaUSBC: OpenIOTarget failed for fake SPI clock line %x\n", status);
 			return status;
 		}
 	}
 
-	DbgPrint("%!FUNC! Exit\n");
+	DbgPrint("LumiaUSBC: LumiaUSBCOpenResources Exit\n");
 	return status;
 }
 
@@ -460,7 +964,7 @@ LumiaUSBCCloseResources(
 	PDEVICE_CONTEXT ctx
 )
 {
-	DbgPrint("%!FUNC! Entry\n");
+	DbgPrint("LumiaUSBC: LumiaUSBCCloseResources Entry\n");
 
 	if (ctx->Spi) {
 		WdfIoTargetClose(ctx->Spi);
@@ -502,7 +1006,7 @@ LumiaUSBCCloseResources(
 		WdfIoTargetClose(ctx->FakeSpiMosi);
 	}
 
-	DbgPrint("%!FUNC! Exit\n");
+	DbgPrint("LumiaUSBC: LumiaUSBCCloseResources Exit\n");
 }
 
 NTSTATUS LumiaUSBCDeviceD0Exit(
@@ -510,11 +1014,56 @@ NTSTATUS LumiaUSBCDeviceD0Exit(
 	WDF_POWER_DEVICE_STATE TargetState
 )
 {
+	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Exit Entry\n");
 	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
-	UNREFERENCED_PARAMETER(TargetState);
+
+	switch (TargetState)
+	{
+	case WdfPowerDeviceInvalid:
+	{
+		DbgPrint("LumiaUSBC: WdfPowerDeviceInvalid\n");
+		break;
+	}
+	case WdfPowerDeviceD0:
+	{
+		DbgPrint("LumiaUSBC: WdfPowerDeviceD0\n");
+		break;
+	}
+	case WdfPowerDeviceD1:
+	{
+		DbgPrint("LumiaUSBC: WdfPowerDeviceD1\n");
+		break;
+	}
+	case WdfPowerDeviceD2:
+	{
+		DbgPrint("LumiaUSBC: WdfPowerDeviceD2\n");
+		break;
+	}
+	case WdfPowerDeviceD3:
+	{
+		DbgPrint("LumiaUSBC: WdfPowerDeviceD3\n");
+		break;
+	}
+	case WdfPowerDeviceD3Final:
+	{
+		DbgPrint("LumiaUSBC: WdfPowerDeviceD3Final\n");
+		break;
+	}
+	case WdfPowerDevicePrepareForHibernation:
+	{
+		DbgPrint("LumiaUSBC: WdfPowerDevicePrepareForHibernation\n");
+		break;
+	}
+	case WdfPowerDeviceMaximum:
+	{
+		DbgPrint("LumiaUSBC: WdfPowerDeviceMaximum\n");
+		break;
+	}
+	}
 
 	LumiaUSBCCloseResources(devCtx);
 
+	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Exit Exit\n");
 	return STATUS_SUCCESS;
 }
 
@@ -534,7 +1083,7 @@ NTSTATUS LumiaUSBCDeviceReleaseHardware(
 #define IOCTL_QUP_SPI_ASSERT_CS   CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x1, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_QUP_SPI_DEASSERT_CS CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x0, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, outputDescriptor;
@@ -582,7 +1131,7 @@ NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, UL
 	return status;
 }
 
-NTSTATUS WriteRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+NTSTATUS WriteRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, inputDescriptor;
@@ -624,7 +1173,7 @@ NTSTATUS WriteRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, U
 }
 
 
-NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_MEMORY_DESCRIPTOR outputDescriptor;
@@ -638,7 +1187,7 @@ NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
 	return status;
 }
 
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_MEMORY_DESCRIPTOR inputDescriptor, outputDescriptor;
@@ -653,7 +1202,7 @@ NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char *value)
 	return status;
 }
 
-NTSTATUS ReadRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+NTSTATUS ReadRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
 {
 	NTSTATUS status;
 	unsigned char data;
@@ -728,7 +1277,7 @@ NTSTATUS ReadRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, UL
 	return status;
 }
 
-NTSTATUS WriteRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+NTSTATUS WriteRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
 {
 	NTSTATUS status;
 	unsigned char data;
@@ -800,7 +1349,7 @@ NTSTATUS WriteRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, U
 	return status;
 }
 
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
 {
 	if (ctx->UseFakeSpi)
 		return ReadRegisterFake(ctx, reg, value, length);
@@ -808,7 +1357,7 @@ NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG 
 		return ReadRegisterReal(ctx, reg, value, length);
 }
 
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
+NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
 {
 	if (ctx->UseFakeSpi)
 		return WriteRegisterFake(ctx, reg, value, length);
@@ -831,13 +1380,13 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_PD_CONFIG pdConfig;
 	WDF_OBJECT_ATTRIBUTES attr;
 
-	DbgPrint("%!FUNC! Entry\n");
+	DbgPrint("LumiaUSBC: LumiaUSBCDevicePrepareHardware Entry\n");
 
 	devCtx = DeviceGetContext(Device);
 
 	status = LumiaUSBCProbeResources(devCtx, ResourcesTranslated, ResourcesRaw);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBCProbeResources failed %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: LumiaUSBCProbeResources failed %x\n", status);
 		return status;
 	}
 
@@ -854,7 +1403,7 @@ LumiaUSBCDevicePrepareHardware(
 	status = UcmInitializeDevice(Device, &ucmCfg);
 	if (!NT_SUCCESS(status))
 	{
-		DbgPrint("UcmInitializeDevice failed %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: UcmInitializeDevice failed %x\n", status);
 		goto Exit;
 	}
 
@@ -880,13 +1429,13 @@ LumiaUSBCDevicePrepareHardware(
 	status = UcmConnectorCreate(Device, &connCfg, &attr, &devCtx->Connector);
 	if (!NT_SUCCESS(status))
 	{
-		DbgPrint("UcmConnectorCreate failed %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: UcmConnectorCreate failed %x\n", status);
 		goto Exit;
 	}
 
 	//UcmEventInitialize(&connCtx->EventSetDataRole);
 Exit:
-	DbgPrint("%!FUNC! Exit\n");
+	DbgPrint("LumiaUSBC: LumiaUSBCDevicePrepareHardware Exit\n");
 	return status;
 }
 
@@ -941,11 +1490,11 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	ULONG data = 0;
 	UNREFERENCED_PARAMETER(PreviousState);
 
-	DbgPrint("%!FUNC! Entry\n");
+	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Entry Entry\n");
 
 	status = LumiaUSBCOpenResources(devCtx);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBCOpenResources failed %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: LumiaUSBCOpenResources failed %x\n", status);
 		return status;
 	}
 
@@ -1074,6 +1623,8 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
 	}
 
+	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Entry Exit\n");
+
 	return status;
 }
 
@@ -1081,9 +1632,10 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	WDFDEVICE Device
 )
 {
+	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Entry\n");
+
 	NTSTATUS status = STATUS_SUCCESS;
 	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
-	wchar_t buf[260];
 	unsigned char value = (unsigned char)0;
 	ULONG input[8], output[6];
 	LARGE_INTEGER delay;
@@ -1102,7 +1654,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 
 	status = PoFxRegisterDevice(WdfDeviceWdmGetPhysicalDevice(Device), &poFxDevice, &devCtx->PoHandle);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("PoFxRegisterDevice failed %!STATUS!\n", status);
+		DbgPrint("LumiaUSBC: PoFxRegisterDevice failed %x\n", status);
 		return status;
 	}
 
@@ -1110,41 +1662,11 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 
 	PoFxStartDevicePowerManagement(devCtx->PoHandle);
 
-	// Tell PEP to turn on the clock
-	memset(input, 0, sizeof(input));
-	input[0] = 2;
-	input[7] = 2;
-	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
-	if (!NT_SUCCESS(status)) {
-		DbgPrint("PoFxPowerControl failed %!STATUS!\n", status);
-		return status;
-	}
-
 	// Initialize the UC120
-	unsigned char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B };
+	unsigned char initvals[] = { 0x02, 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0D, 0x7D, 0x32, 0x5F, 0x9E };
 
-	//ReadRegister(devCtx, 4, &value, 1);
-	value = 6;
-	WriteRegister(devCtx, 4, &value, 1);
-
-	//ReadRegister(devCtx, 5, &value, 1);
-	value = 0x88;
-	WriteRegister(devCtx, 5, &value, 1);
-
-	//ReadRegister(devCtx, 13, &value, 1);
-	value = 2;
-	WriteRegister(devCtx, 13, &value, 1);
-
-	WriteRegister(devCtx, 18, initvals + 0, 1);
-	WriteRegister(devCtx, 19, initvals + 1, 1);
-	WriteRegister(devCtx, 20, initvals + 2, 1);
-	WriteRegister(devCtx, 21, initvals + 3, 1);
-	WriteRegister(devCtx, 26, initvals + 4, 1);
-	WriteRegister(devCtx, 22, initvals + 5, 1);
-	WriteRegister(devCtx, 23, initvals + 6, 1);
-	WriteRegister(devCtx, 24, initvals + 7, 1);
-	WriteRegister(devCtx, 25, initvals + 8, 1);
-	WriteRegister(devCtx, 27, initvals + 9, 1);
+	UC120_D0Entry(devCtx);
+	UC120_UploadCalibrationData(devCtx, initvals, sizeof(initvals));
 
 	value = 0;
 
@@ -1153,7 +1675,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	delay.QuadPart = -100000;
 	do {
 		if (!NT_SUCCESS(ReadRegister(devCtx, 5, &value, 1)))
-			DbgPrint("Failed to read register #5 in the init waiting loop!\n");
+			DbgPrint("LumiaUSBC: Failed to read register #5 in the init waiting loop!\n");
 		KeDelayExecutionThread(UserMode, TRUE, &delay);
 		i++;
 		if (i > 500) {
@@ -1161,85 +1683,68 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		}
 	} while (value == 0);
 
-	DbgPrint("UC120 initialized after %d iterations with value of %x\n", i, value);
+	DbgPrint("LumiaUSBC: UC120 initialized after %d iterations with value of %x\n", i, value);
 
-	/*i |= value << 16;
+	i |= value << 16;
 
 	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
 		(PCWSTR)L"startdelay",
 		REG_DWORD,
 		&i,
-		sizeof(ULONG));*/
+		sizeof(ULONG));
 
-	unsigned char registers[8];
-	NTSTATUS statuses[8];
+	//UC120_GetCurrentRegisters(devCtx, 0);
+	UC120_GetCurrentState(devCtx, 0);
 
-	memset(registers, 0, sizeof(registers));
-	memset(statuses, 0, sizeof(statuses));
+	UC120_InterruptsEnable(devCtx);
 
-	statuses[0] = ReadRegister(devCtx, 0, registers + 0, 1);
-	statuses[1] = ReadRegister(devCtx, 1, registers + 1, 1);
-	statuses[2] = ReadRegister(devCtx, 2, registers + 2, 1);
-	statuses[3] = ReadRegister(devCtx, 5, registers + 3, 1);
-	statuses[4] = ReadRegister(devCtx, 7, registers + 4, 1);
-	statuses[5] = ReadRegister(devCtx, 9, registers + 5, 1);
-	statuses[6] = ReadRegister(devCtx, 10, registers + 6, 1);
-	statuses[7] = ReadRegister(devCtx, 11, registers + 7, 1);
-	swprintf(buf, L"INIT_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
-	DbgPrint("%ls\n", buf);
+	// Tell PEP to turn on the clock
+	memset(input, 0, sizeof(input));
+	input[0] = 2;
+	input[7] = 2;
+	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("LumiaUSBC: PoFxPowerControl failed %x\n", status);
+		return status;
+	}
 
-	/*RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&data,
-		sizeof(ULONG));*/
-
-	swprintf(buf, L"S_INIT_%08x-%08x-%08x-%08x-%08x-%08x-%08x-%08x", statuses[0], statuses[1], statuses[2], statuses[3], statuses[4], statuses[5], statuses[6], statuses[7]);
-	DbgPrint("%ls\n", buf);
-
-	/*RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&data,
-		sizeof(ULONG));*/
-
-	DbgPrint("%!FUNC! Exit\n");
+	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Exit\n");
 	return status;
 }
 
 NTSTATUS
 LumiaUSBCKmCreateDevice(
-    _Inout_ PWDFDEVICE_INIT DeviceInit
-    )
+	_Inout_ PWDFDEVICE_INIT DeviceInit
+)
 /*++
 
 Routine Description:
 
-    Worker routine called to create a device and its software resources.
+	Worker routine called to create a device and its software resources.
 
 Arguments:
 
-    DeviceInit - Pointer to an opaque init structure. Memory for this
-                    structure will be freed by the framework when the WdfDeviceCreate
-                    succeeds. So don't access the structure after that point.
+	DeviceInit - Pointer to an opaque init structure. Memory for this
+					structure will be freed by the framework when the WdfDeviceCreate
+					succeeds. So don't access the structure after that point.
 
 Return Value:
 
-    NTSTATUS
+	NTSTATUS
 
 --*/
 {
-    WDF_OBJECT_ATTRIBUTES deviceAttributes;
+	WDF_OBJECT_ATTRIBUTES deviceAttributes;
 	WDF_PNPPOWER_EVENT_CALLBACKS pnpPowerCallbacks;
-    PDEVICE_CONTEXT deviceContext;
-    WDFDEVICE device;
+	PDEVICE_CONTEXT deviceContext;
+	WDFDEVICE device;
 	UCM_MANAGER_CONFIG ucmConfig;
-    NTSTATUS status;
+	NTSTATUS status;
 
-    PAGED_CODE();
+	PAGED_CODE();
+
+	DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Entry\n");
 
 	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
 	pnpPowerCallbacks.EvtDevicePrepareHardware = LumiaUSBCDevicePrepareHardware;
@@ -1250,32 +1755,35 @@ Return Value:
 	//pnpPowerCallbacks.EvtDeviceSelfManagedIoRestart = Fdo_EvtDeviceSelfManagedIoRestart;
 	WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
 
-    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, DEVICE_CONTEXT);
+	WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, DEVICE_CONTEXT);
 
-    status = WdfDeviceCreate(&DeviceInit, &deviceAttributes, &device);
+	status = WdfDeviceCreate(&DeviceInit, &deviceAttributes, &device);
 
-    if (NT_SUCCESS(status)) {
-        //
-        // Get a pointer to the device context structure that we just associated
-        // with the device object. We define this structure in the device.h
-        // header file. DeviceGetContext is an inline function generated by
-        // using the WDF_DECLARE_CONTEXT_TYPE_WITH_NAME macro in device.h.
-        // This function will do the type checking and return the device context.
-        // If you pass a wrong object handle it will return NULL and assert if
-        // run under framework verifier mode.
-        //
-        deviceContext = DeviceGetContext(device);
+	if (NT_SUCCESS(status)) {
+		//
+		// Get a pointer to the device context structure that we just associated
+		// with the device object. We define this structure in the device.h
+		// header file. DeviceGetContext is an inline function generated by
+		// using the WDF_DECLARE_CONTEXT_TYPE_WITH_NAME macro in device.h.
+		// This function will do the type checking and return the device context.
+		// If you pass a wrong object handle it will return NULL and assert if
+		// run under framework verifier mode.
+		//
+		deviceContext = DeviceGetContext(device);
 
-        //
-        // Initialize the context.
-        //
+		//
+		// Initialize the context.
+		//
 		deviceContext->Device = device;
 		deviceContext->Connector = NULL;
 
 		UCM_MANAGER_CONFIG_INIT(&ucmConfig);
 		status = UcmInitializeDevice(device, &ucmConfig);
 		if (!NT_SUCCESS(status))
+		{
+			DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
 			return status;
+		}
 
 		/*WDF_POWER_FRAMEWORK_SETTINGS poFxSettings;
 
@@ -1299,32 +1807,35 @@ Return Value:
 			IdleCannotWakeFromS0
 		);
 		idleSettings.IdleTimeoutType = DriverManagedIdleTimeout;
+		idleSettings.Enabled = WdfFalse;
 
 		status = WdfDeviceAssignS0IdleSettings(
 			device,
 			&idleSettings
 		);
 		if (!NT_SUCCESS(status)) {
+			DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
 			return status;
 		}
 
-        //
-        // Create a device interface so that applications can find and talk
-        // to us.
-        //
-        /*status = WdfDeviceCreateDeviceInterface(
-            device,
-            &GUID_DEVINTERFACE_LumiaUSBCKm,
-            NULL // ReferenceString
-            );
+		//
+		// Create a device interface so that applications can find and talk
+		// to us.
+		//
+		/*status = WdfDeviceCreateDeviceInterface(
+			device,
+			&GUID_DEVINTERFACE_LumiaUSBCKm,
+			NULL // ReferenceString
+			);
 
-        if (NT_SUCCESS(status)) {
-            //
-            // Initialize the I/O Package and any Queues
-            //
-            status = LumiaUSBCKmQueueInitialize(device);
-        }*/
-    }
+		if (NT_SUCCESS(status)) {
+			//
+			// Initialize the I/O Package and any Queues
+			//
+			status = LumiaUSBCKmQueueInitialize(device);
+		}*/
+	}
 
-    return status;
+	DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
+	return status;
 }
