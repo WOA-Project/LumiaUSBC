@@ -172,10 +172,6 @@ NTSTATUS Uc120InterruptEnable(
 	unsigned char value;
 	UNREFERENCED_PARAMETER(Interrupt);
 
-	ReadRegister(ctx, 5, &value, 1);
-	value &= ~0x80;
-	WriteRegister(ctx, 5, &value, 1);
-
 	value = 0xFF;
 	WriteRegister(ctx, 2, &value, 1);
 	WriteRegister(ctx, 3, &value, 1);
@@ -183,6 +179,10 @@ NTSTATUS Uc120InterruptEnable(
 	ReadRegister(ctx, 4, &value, 1);
 	value |= 1;
 	WriteRegister(ctx, 4, &value, 1);
+
+	ReadRegister(ctx, 5, &value, 1);
+	value &= ~0x80;
+	WriteRegister(ctx, 5, &value, 1);
 
 	return status;
 }
@@ -455,6 +455,12 @@ LumiaUSBCOpenResources(
 	return status;
 }
 
+#define IOCTL_QUP_SPI_CS_MANIPULATION 0x610
+
+#define IOCTL_QUP_SPI_AUTO_CS     CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x2, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_QUP_SPI_ASSERT_CS   CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x1, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_QUP_SPI_DEASSERT_CS CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x0, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
@@ -462,16 +468,42 @@ NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, UL
 	unsigned char command = (unsigned char)(reg << 3);
 
 	WdfObjectAcquireLock(ctx->Device);
+
+	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_ASSERT_CS, NULL, NULL, NULL, NULL);
+	if (!NT_SUCCESS(status))
+	{
+		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
+		WdfObjectReleaseLock(ctx->Device);
+		return status;
+	}
+
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
 	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &regDescriptor, NULL, NULL, NULL);
 	if (!NT_SUCCESS(status))
 	{
+		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
 		WdfObjectReleaseLock(ctx->Device);
 		return status;
 	}
 
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, length);
-	status = WdfIoTargetSendReadSynchronously(ctx->Spi, NULL, &outputDescriptor, NULL, NULL, NULL);
+
+	// need to read 3 times to get the correct value, for some reason
+	// NOTE: original driver does a full-duplex transfer here, where the 1st byte starts reading *before*
+	// the register ID is written, so possibly we will need 2 here instead!
+	for (int i = 0; i < 3; i++) {
+		status = WdfIoTargetSendReadSynchronously(ctx->Spi, NULL, &outputDescriptor, NULL, NULL, NULL);
+
+		if (!NT_SUCCESS(status))
+		{
+			WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
+			WdfObjectReleaseLock(ctx->Device);
+			return status;
+		}
+	}
+
+	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
+
 	WdfObjectReleaseLock(ctx->Device);
 
 	return status;
@@ -484,16 +516,35 @@ NTSTATUS WriteRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char *value, U
 	unsigned char command = (unsigned char)((reg << 3) | 1);
 
 	WdfObjectAcquireLock(ctx->Device);
+
+	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_ASSERT_CS, NULL, NULL, NULL, NULL);
+	if (!NT_SUCCESS(status))
+	{
+		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
+		WdfObjectReleaseLock(ctx->Device);
+		return status;
+	}
+
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
 	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &regDescriptor, NULL, NULL, NULL);
 	if (!NT_SUCCESS(status))
 	{
+		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
 		WdfObjectReleaseLock(ctx->Device);
 		return status;
 	}
 
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, value, length);
 	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &inputDescriptor, NULL, NULL, NULL);
+	if (!NT_SUCCESS(status))
+	{
+		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
+		WdfObjectReleaseLock(ctx->Device);
+		return status;
+	}
+
+	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
+
 	WdfObjectReleaseLock(ctx->Device);
 
 	return status;
@@ -814,44 +865,10 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	NTSTATUS status = STATUS_SUCCESS;
 	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 	//PCONNECTOR_CONTEXT connCtx = ConnectorGetContext(devCtx->Connector);
-	PO_FX_DEVICE poFxDevice;
-	PO_FX_COMPONENT_IDLE_STATE idleState;
-	ULONG input[8], output[6];
-	wchar_t buf[260];
 	ULONG data = 0;
-	LARGE_INTEGER delay;
-	LONG i = 0;// , j = 0;
 	UNREFERENCED_PARAMETER(PreviousState);
 
 	DbgPrint("%!FUNC! Entry\n");
-
-	memset(&poFxDevice, 0, sizeof(poFxDevice));
-	memset(&idleState, 0, sizeof(idleState));
-	poFxDevice.Version = PO_FX_VERSION_V1;
-	poFxDevice.ComponentCount = 1;
-	poFxDevice.Components[0].IdleStateCount = 1;
-	poFxDevice.Components[0].IdleStates = &idleState;
-	poFxDevice.DeviceContext = devCtx;
-	idleState.NominalPower = PO_FX_UNKNOWN_POWER;
-
-	status = PoFxRegisterDevice(WdfDeviceWdmGetPhysicalDevice(Device), &poFxDevice, &devCtx->PoHandle);
-	if (!NT_SUCCESS(status)) {
-		DbgPrint("PoFxRegisterDevice failed %!STATUS!\n", status);
-		return status;
-	}
-
-	PoFxActivateComponent(devCtx->PoHandle, 0, PO_FX_FLAG_BLOCKING);
-
-	PoFxStartDevicePowerManagement(devCtx->PoHandle);
-
-	memset(input, 0, sizeof(input));
-	input[0] = 2;
-	input[7] = 2;
-	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
-	if (!NT_SUCCESS(status)) {
-		DbgPrint("PoFxPowerControl failed %!STATUS!\n", status);
-		return status;
-	}
 
 	status = LumiaUSBCOpenResources(devCtx);
 	if (!NT_SUCCESS(status)) {
@@ -984,8 +1001,49 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
 	}
 
+	return status;
+}
+
+void LumiaUSBCActiveConditionCallback(
+	PVOID Context,
+	ULONG Component
+)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PDEVICE_CONTEXT devCtx = DeviceGetContext((WDFDEVICE) Context);
+	wchar_t buf[260];
+	unsigned char value = (unsigned char)0;
+	ULONG input[8], output[6];
+	LARGE_INTEGER delay;
+	LONG i = 0;// , j = 0;
+
+	UNREFERENCED_PARAMETER(Component);
+
+
+	// Tell PEP to turn on the clock
+	memset(input, 0, sizeof(input));
+	input[0] = 2;
+	input[7] = 2;
+	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("PoFxPowerControl failed %!STATUS!\n", status);
+		return;
+	}
+
 	// Initialize the UC120
 	unsigned char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B };
+
+	//ReadRegister(devCtx, 4, &value, 1);
+	value = 6;
+	WriteRegister(devCtx, 4, &value, 1);
+
+	//ReadRegister(devCtx, 5, &value, 1);
+	value = 0x88;
+	WriteRegister(devCtx, 5, &value, 1);
+
+	//ReadRegister(devCtx, 13, &value, 1);
+	value = 2;
+	WriteRegister(devCtx, 13, &value, 1);
 
 	WriteRegister(devCtx, 18, initvals + 0, 1);
 	WriteRegister(devCtx, 19, initvals + 1, 1);
@@ -997,18 +1055,6 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	WriteRegister(devCtx, 24, initvals + 7, 1);
 	WriteRegister(devCtx, 25, initvals + 8, 1);
 	WriteRegister(devCtx, 27, initvals + 9, 1);
-
-	//ReadRegister(devCtx, 4, &value, 1);
-	value = 6;
-	WriteRegister(devCtx, 4, &value, 1);
-
-	ReadRegister(devCtx, 5, &value, 1);
-	value |= 0x88;
-	WriteRegister(devCtx, 5, &value, 1);
-
-	//ReadRegister(devCtx, 13, &value, 1);
-	value = 2;
-	WriteRegister(devCtx, 13, &value, 1);
 
 	value = 0;
 
@@ -1071,7 +1117,16 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		sizeof(ULONG));*/
 
 	DbgPrint("%!FUNC! Exit\n");
+}
 
+NTSTATUS LumiaUSBCPostPoFxRegisterDevice(
+	WDFDEVICE Device,
+	POHANDLE PoHandle
+)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
+	devCtx->PoHandle = PoHandle;
 	return status;
 }
 
@@ -1141,6 +1196,38 @@ Return Value:
 		status = UcmInitializeDevice(device, &ucmConfig);
 		if (!NT_SUCCESS(status))
 			return status;
+
+		WDF_POWER_FRAMEWORK_SETTINGS poFxSettings;
+
+		WDF_POWER_FRAMEWORK_SETTINGS_INIT(&poFxSettings);
+
+		poFxSettings.EvtDeviceWdmPostPoFxRegisterDevice = LumiaUSBCPostPoFxRegisterDevice;
+		poFxSettings.ComponentActiveConditionCallback = LumiaUSBCActiveConditionCallback;
+
+		poFxSettings.Component = NULL; // &component;
+		poFxSettings.PoFxDeviceContext = (PVOID)device;
+
+		status = WdfDeviceWdmAssignPowerFrameworkSettings(device, &poFxSettings);
+		if (!NT_SUCCESS(status)) {
+			return status;
+		}
+
+		WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS  idleSettings;
+
+		WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS_INIT(
+			&idleSettings,
+			IdleCannotWakeFromS0
+		);
+		idleSettings.IdleTimeoutType = SystemManagedIdleTimeout;
+
+		status = WdfDeviceAssignS0IdleSettings(
+			device,
+			&idleSettings
+		);
+		if (!NT_SUCCESS(status)) {
+			return status;
+		}
+
         //
         // Create a device interface so that applications can find and talk
         // to us.
