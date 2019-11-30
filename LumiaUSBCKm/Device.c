@@ -1113,7 +1113,9 @@ NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, UL
 	// need to read 3 times to get the correct value, for some reason
 	// NOTE: original driver does a full-duplex transfer here, where the 1st byte starts reading *before*
 	// the register ID is written, so possibly we will need 2 here instead!
-	for (int i = 0; i < 3; i++) {
+
+        // Temp change to 2
+	for (int i = 0; i < 2; i++) {
 		status = WdfIoTargetSendReadSynchronously(ctx->Spi, NULL, &outputDescriptor, NULL, NULL, NULL);
 
 		if (!NT_SUCCESS(status))
