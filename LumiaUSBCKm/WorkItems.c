@@ -45,8 +45,8 @@ void PlugDetInterruptWorkItem(
 	DbgPrint("LumiaUSBC: Got an interrupt from PLUGDET!\n");
 
 	//UC120_GetCurrentRegisters(ctx, 1);
-	UC120_GetCurrentState(ctx, 1);
-	UC120_InterruptHandled(ctx);
+	//UC120_GetCurrentState(ctx, 1);
+	//UC120_InterruptHandled(ctx);
 }
 
 void Mystery1InterruptWorkItem(

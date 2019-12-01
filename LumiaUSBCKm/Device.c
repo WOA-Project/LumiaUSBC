@@ -319,13 +319,13 @@ LumiaUSBCProbeResources(
 
 	WDF_INTERRUPT_CONFIG_INIT(&interruptConfig2, EvtInterruptIsr, NULL);
 
-	interruptConfig2.PassiveHandling = TRUE;
+	//interruptConfig2.PassiveHandling = TRUE;
 	interruptConfig2.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, PlugDetInterrupt);
 	interruptConfig2.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, PlugDetInterrupt);
 
 	interruptConfig2.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
 
-	/*status = WdfInterruptCreate(
+	status = WdfInterruptCreate(
 		DeviceContext->Device,
 		&interruptConfig2,
 		WDF_NO_OBJECT_ATTRIBUTES,
@@ -334,7 +334,7 @@ LumiaUSBCProbeResources(
 	{
 		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for plug detection %x\n", status);
 		goto Exit;
-	}*/
+	}
 
 	WDF_INTERRUPT_CONFIG_INIT(&interruptConfig3, EvtInterruptIsr, NULL);
 
@@ -791,6 +791,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		goto Exit;
 	}
 
+Exit:
 	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Exit\n");
 	return status;
 }
