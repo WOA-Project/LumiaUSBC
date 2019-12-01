@@ -71,7 +71,11 @@ LumiaUSBCSetDataRole(
 
 	UNREFERENCED_PARAMETER(DataRole);
 
+	DbgPrint("LumiaUSBC: LumiaUSBCSetDataRole Entry\n");
+
 	connCtx = ConnectorGetContext(Connector);
+
+	DbgPrint("LumiaUSBC: LumiaUSBCSetDataRole Exit\n");
 
 	return STATUS_SUCCESS;
 }
@@ -83,7 +87,11 @@ BOOLEAN EvtInterruptIsr(
 {
 	UNREFERENCED_PARAMETER(MessageID);
 
+	DbgPrint("LumiaUSBC: EvtInterruptIsr Entry\n");
+
 	WdfInterruptQueueWorkItemForIsr(Interrupt);
+
+	DbgPrint("LumiaUSBC: EvtInterruptIsr Exit\n");
 
 	return TRUE;
 }
@@ -94,10 +102,15 @@ NTSTATUS Uc120InterruptEnable(
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
+
+	DbgPrint("LumiaUSBC: Uc120InterruptEnable Entry\n");
+
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedDevice);
 	UNREFERENCED_PARAMETER(Interrupt);
 
 	status = UC120_InterruptsEnable(ctx);
+
+	DbgPrint("LumiaUSBC: Uc120InterruptEnable Exit\n");
 
 	return status;
 }
@@ -108,10 +121,15 @@ NTSTATUS Uc120InterruptDisable(
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
+
+	DbgPrint("LumiaUSBC: Uc120InterruptDisable Entry\n");
+
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedDevice);
 	UNREFERENCED_PARAMETER(Interrupt);
 
 	status = UC120_InterruptsDisable(ctx);
+
+	DbgPrint("LumiaUSBC: Uc120InterruptDisable Exit\n");
 
 	return status;
 }
@@ -135,7 +153,7 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 		res.HighPart);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: RESOURCE_HUB_CREATE_PATH_FROM_ID failed %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	WDF_OBJECT_ATTRIBUTES_INIT(&ObjectAttributes);
@@ -144,15 +162,17 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, target);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: WdfIoTargetCreate failed %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, use);
 	status = WdfIoTargetOpen(*target, &OpenParams);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: WdfIoTargetOpen failed %x\n", status);
+		goto Exit;
 	}
 
+Exit:
 	DbgPrint("LumiaUSBC: OpenIOTarget Exit\n");
 	return status;
 }
@@ -165,9 +185,6 @@ LumiaUSBCProbeResources(
 )
 {
 	PAGED_CODE();
-
-	//DeviceContext->HaveResetGpio = FALSE;
-	//DeviceContext->UseFakeSpi = FALSE;
 
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_INTERRUPT_CONFIG interruptConfig;
@@ -374,33 +391,34 @@ LumiaUSBCOpenResources(
 	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: OpenIOTarget failed for SPI %x Falling back to fake SPI.\n", status);
-		return status;
+		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->VbusGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->VbusGpio);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: OpenIOTarget failed for VBUS GPIO %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->PolGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->PolGpio);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: OpenIOTarget failed for polarity GPIO %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->AmselGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->AmselGpio);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: OpenIOTarget failed for alternate mode selection GPIO %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->EnGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->EnGpio);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: OpenIOTarget failed for mux enable GPIO %x\n", status);
-		return status;
+		goto Exit;
 	}
 
+Exit:
 	DbgPrint("LumiaUSBC: LumiaUSBCOpenResources Exit\n");
 	return status;
 }
@@ -441,6 +459,7 @@ NTSTATUS LumiaUSBCDeviceD0Exit(
 )
 {
 	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Exit Entry\n");
+
 	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 
 	switch (TargetState)
@@ -498,7 +517,11 @@ NTSTATUS LumiaUSBCDeviceReleaseHardware(
 	WDFCMRESLIST ResourcesTranslated
 )
 {
+	DbgPrint("LumiaUSBC: LumiaUSBCDeviceReleaseHardware Entry\n");
+
 	UNREFERENCED_PARAMETER((Device, ResourcesTranslated));
+
+	DbgPrint("LumiaUSBC: LumiaUSBCDeviceReleaseHardware Exit\n");
 
 	return STATUS_SUCCESS;
 }
@@ -525,7 +548,7 @@ LumiaUSBCDevicePrepareHardware(
 	status = LumiaUSBCProbeResources(devCtx, ResourcesTranslated, ResourcesRaw);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: LumiaUSBCProbeResources failed %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	if (devCtx->Connector)
@@ -583,17 +606,18 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
-	//PCONNECTOR_CONTEXT connCtx = ConnectorGetContext(devCtx->Connector);
 	ULONG data = 0;
 	UNREFERENCED_PARAMETER(PreviousState);
 
 	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Entry Entry\n");
 
+	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
+	//PCONNECTOR_CONTEXT connCtx = ConnectorGetContext(devCtx->Connector);
+
 	status = LumiaUSBCOpenResources(devCtx);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: LumiaUSBCOpenResources failed %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS Params;
@@ -659,8 +683,8 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
 	}
 
+Exit:
 	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Entry Exit\n");
-
 	return status;
 }
 
@@ -668,16 +692,17 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	WDFDEVICE Device
 )
 {
-	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Entry\n");
-
 	NTSTATUS status = STATUS_SUCCESS;
-	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 	unsigned char value = (unsigned char)0;
 	ULONG input[8], output[6];
 	LARGE_INTEGER delay;
 	LONG i = 0;// , j = 0;
 	PO_FX_DEVICE poFxDevice;
 	PO_FX_COMPONENT_IDLE_STATE idleState;
+
+	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Entry\n");
+
+	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 
 	memset(&poFxDevice, 0, sizeof(poFxDevice));
 	memset(&idleState, 0, sizeof(idleState));
@@ -691,7 +716,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	status = PoFxRegisterDevice(WdfDeviceWdmGetPhysicalDevice(Device), &poFxDevice, &devCtx->PoHandle);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: PoFxRegisterDevice failed %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	PoFxActivateComponent(devCtx->PoHandle, 0, PO_FX_FLAG_BLOCKING);
@@ -705,7 +730,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: PoFxPowerControl failed %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	// Initialize the UC120
@@ -715,14 +740,14 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	if (!NT_SUCCESS(status))
 	{
 		DbgPrint("LumiaUSBC: UC120_D0Entry failed %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	status = UC120_UploadCalibrationData(devCtx, initvals, sizeof(initvals));
 	if (!NT_SUCCESS(status))
 	{
 		DbgPrint("LumiaUSBC: UC120_UploadCalibrationData failed %x\n", status);
-		return status;
+		goto Exit;
 	}
 
 	value = 0;
@@ -752,9 +777,19 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		sizeof(ULONG));
 
 	//UC120_GetCurrentRegisters(devCtx, 0);
-	UC120_GetCurrentState(devCtx, 0);
+	status = UC120_GetCurrentState(devCtx, 0);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("LumiaUSBC: UC120_GetCurrentState failed %x\n", status);
+		goto Exit;
+	}
 
-	UC120_InterruptsEnable(devCtx);
+	status = UC120_InterruptsEnable(devCtx);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("LumiaUSBC: UC120_InterruptsEnable failed %x\n", status);
+		goto Exit;
+	}
 
 	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Exit\n");
 	return status;
@@ -829,7 +864,7 @@ Return Value:
 		if (!NT_SUCCESS(status))
 		{
 			DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
-			return status;
+			goto Exit;
 		}
 
 		/*WDF_POWER_FRAMEWORK_SETTINGS poFxSettings;
@@ -862,7 +897,7 @@ Return Value:
 		);
 		if (!NT_SUCCESS(status)) {
 			DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
-			return status;
+			goto Exit;
 		}
 
 		//
@@ -883,6 +918,7 @@ Return Value:
 		}*/
 	}
 
+Exit:
 	DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
 	return status;
 }

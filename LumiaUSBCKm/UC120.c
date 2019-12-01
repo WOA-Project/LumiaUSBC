@@ -25,6 +25,7 @@ NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, unsigned int c
 	unsigned char value = 0;
 	wchar_t buf[260];
 
+	DbgPrint("LumiaUSBC: UC120_GetCurrentRegisters Entry\n");
 	PCWSTR contextStr = L"REG";
 	if (context == 0)
 	{
@@ -107,6 +108,7 @@ NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, unsigned int c
 	}
 
 Exit:
+	DbgPrint("LumiaUSBC: UC120_GetCurrentRegisters Exit\n");
 	return status;
 }
 
@@ -117,6 +119,7 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 	wchar_t buf[260];
 	ULONG outgoingMessageSize, incomingMessageSize, isCableConnected, newPowerRole, newDataRole, vconnRoleSwitch = 0;
 
+	DbgPrint("LumiaUSBC: UC120_GetCurrentState Entry\n");
 	PCWSTR contextStr = L"REG";
 	if (context == 0)
 	{
@@ -268,6 +271,7 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 	}
 
 Exit:
+	DbgPrint("LumiaUSBC: UC120_GetCurrentState Exit\n");
 	return status;
 }
 
@@ -275,6 +279,8 @@ NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	unsigned char data = 0;
+
+	DbgPrint("LumiaUSBC: UC120_InterruptHandled Entry\n");
 
 	data = 0xFF; // Clear to 0xFF
 	status = WriteRegister(deviceContext, 2, &data, 1);
@@ -284,6 +290,7 @@ NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext)
 	}
 
 Exit:
+	DbgPrint("LumiaUSBC: UC120_InterruptHandled Exit\n");
 	return status;
 }
 
@@ -291,6 +298,8 @@ NTSTATUS UC120_InterruptsEnable(PDEVICE_CONTEXT deviceContext)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	unsigned char data = 0;
+
+	DbgPrint("LumiaUSBC: UC120_InterruptsEnable Entry\n");
 
 	data = 0xFF; // Clear to 0xFF
 	status = WriteRegister(deviceContext, 2, &data, 1);
@@ -332,6 +341,7 @@ NTSTATUS UC120_InterruptsEnable(PDEVICE_CONTEXT deviceContext)
 	}
 
 Exit:
+	DbgPrint("LumiaUSBC: UC120_InterruptsEnable Exit\n");
 	return status;
 }
 
@@ -339,6 +349,8 @@ NTSTATUS UC120_InterruptsDisable(PDEVICE_CONTEXT deviceContext)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	unsigned char data = 0;
+
+	DbgPrint("LumiaUSBC: UC120_InterruptsDisable Entry\n");
 
 	status = ReadRegister(deviceContext, 4, &data, 1);
 	if (!NT_SUCCESS(status))
@@ -354,6 +366,7 @@ NTSTATUS UC120_InterruptsDisable(PDEVICE_CONTEXT deviceContext)
 	}
 
 Exit:
+	DbgPrint("LumiaUSBC: UC120_InterruptsDisable Exit\n");
 	return status;
 }
 
@@ -361,6 +374,8 @@ NTSTATUS UC120_D0Entry(PDEVICE_CONTEXT deviceContext)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	unsigned char data = 0;
+
+	DbgPrint("LumiaUSBC: UC120_D0Entry Entry\n");
 
 	status = ReadRegister(deviceContext, 4, &data, 1);
 	if (!NT_SUCCESS(status))
@@ -400,12 +415,15 @@ NTSTATUS UC120_D0Entry(PDEVICE_CONTEXT deviceContext)
 	}
 
 Exit:
+	DbgPrint("LumiaUSBC: UC120_D0Entry Exit\n");
 	return status;
 }
 
 NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned char* calibrationFile, unsigned int length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
+	DbgPrint("LumiaUSBC: UC120_UploadCalibrationData Entry\n");
+
 	switch (length)
 	{
 	case 10:
@@ -514,5 +532,6 @@ NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned cha
 	}
 
 Exit:
+	DbgPrint("LumiaUSBC: UC120_UploadCalibrationData Exit\n");
 	return status;
 }
