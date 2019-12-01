@@ -20,7 +20,7 @@ Environment:
 #include <wchar.h>
 #include "USBRole.tmh"
 
-NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target)
+NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target, unsigned int side)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	unsigned char data = 0;
@@ -57,8 +57,8 @@ NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target
 	// Remove the previous connector
 	UcmConnectorTypeCDetach(deviceContext->Connector);
 
-	// Turn on polling
-	unsigned char value = (unsigned char)1;
+	// Indicate the correct side
+	unsigned char value = (unsigned char)side;
 	SetGPIO(deviceContext, deviceContext->PolGpio, &value);
 
 	// Commented out for safety until we're sure everything is working as expected.

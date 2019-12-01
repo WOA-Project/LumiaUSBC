@@ -272,8 +272,20 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 		goto Exit;
 	}
 
-	unsigned char role = registers[5];
+	unsigned int side = 1;
 	UCM_TYPEC_PARTNER mode = UcmTypeCPartnerInvalid;
+	unsigned char role = registers[5];
+
+	if (role == (unsigned char)0)
+	{
+		role = registers[6];
+		side = 0;
+	}
+	if (role == (unsigned char)0)
+	{
+		USBC_ChangeRole(deviceContext, mode, side);
+	}
+
 	if (((unsigned int)role >> 7) & 1u && ((unsigned int)role >> 6) & 1u && ((unsigned int)role >> 5) & 1u && ((unsigned int)role >> 4) & 1u)
 	{
 		// HOST + VBUS
@@ -299,7 +311,7 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 		}
 	}
 
-	USBC_ChangeRole(deviceContext, mode);
+	USBC_ChangeRole(deviceContext, mode, side);
 
 Exit:
 	DbgPrint("LumiaUSBC: UC120_GetCurrentState Exit\n");

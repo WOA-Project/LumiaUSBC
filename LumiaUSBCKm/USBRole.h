@@ -1,5 +1,5 @@
 EXTERN_C_START
 
-NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target);
+NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target, unsigned int side);
 
 EXTERN_C_END
