@@ -58,6 +58,6 @@ KmdfLibraryVersion = $KMDFVERSION$
 SPSVCINST_ASSOCSERVICE = 0x00000002
 
 ManufacturerName       = "LumiaWoA authors"
-DiskName               = "LumiaUSBCKm Installation Disk"
-LumiaUSBCKm.DeviceDesc = "LumiaUSBCKm Device (Pol=1, iteration=35)"
-LumiaUSBCKm.SVCDESC    = "LumiaUSBCKm Service"
+DiskName               = "Lumia USB-C Installation Disk"
+LumiaUSBCKm.DeviceDesc = "Lumia USB-C Device (iteration=36)"
+LumiaUSBCKm.SVCDESC    = "Lumia USB-C Service"
