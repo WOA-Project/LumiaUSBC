@@ -32,15 +32,6 @@ typedef struct _DEVICE_CONTEXT
 	POHANDLE PoHandle;
 	LARGE_INTEGER SpiId;
 	WDFIOTARGET Spi;
-	//BOOLEAN UseFakeSpi;
-	//LARGE_INTEGER FakeSpiMosiId;
-	//WDFIOTARGET FakeSpiMosi;
-	//LARGE_INTEGER FakeSpiMisoId;
-	//WDFIOTARGET FakeSpiMiso;
-	//LARGE_INTEGER FakeSpiCsId;
-	//WDFIOTARGET FakeSpiCs;
-	//LARGE_INTEGER FakeSpiClkId;
-	//WDFIOTARGET FakeSpiClk;
 	LARGE_INTEGER VbusGpioId;
 	WDFIOTARGET VbusGpio;
 	LARGE_INTEGER PolGpioId;
@@ -49,9 +40,6 @@ typedef struct _DEVICE_CONTEXT
 	WDFIOTARGET AmselGpio;
 	LARGE_INTEGER EnGpioId;
 	WDFIOTARGET EnGpio;
-	//LARGE_INTEGER ResetGpioId;
-	//WDFIOTARGET ResetGpio;
-	//BOOLEAN HaveResetGpio;
 	WDFINTERRUPT PlugDetectInterrupt;
 	WDFINTERRUPT Uc120Interrupt;
 	WDFINTERRUPT MysteryInterrupt1;
@@ -79,8 +67,5 @@ NTSTATUS
 LumiaUSBCKmCreateDevice(
     _Inout_ PWDFDEVICE_INIT DeviceInit
     );
-
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length);
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length);
 
 EXTERN_C_END

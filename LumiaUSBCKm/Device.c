@@ -42,8 +42,6 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device);
 #pragma alloc_text (PAGE, LumiaUSBCKmCreateDevice)
 #pragma alloc_text (PAGE, LumiaUSBCDevicePrepareHardware)
 #pragma alloc_text (PAGE, LumiaUSBCSetDataRole)
-
-#pragma alloc_text (PAGE, EvtInterruptIsr)
 #endif
 
 #pragma region UC120 Communication
