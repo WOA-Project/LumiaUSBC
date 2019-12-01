@@ -68,4 +68,6 @@ LumiaUSBCKmCreateDevice(
     _Inout_ PWDFDEVICE_INIT DeviceInit
     );
 
+#define UC120_CALIBRATIONFILE_SIZE 11
+
 EXTERN_C_END
