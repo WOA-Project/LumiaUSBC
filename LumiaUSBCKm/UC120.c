@@ -16,6 +16,8 @@ Environment:
 
 #include "Driver.h"
 #include "SPI.h"
+#include "Registry.h"
+#include "USBRole.h"
 #include <wchar.h>
 #include "UC120.tmh"
 
@@ -269,6 +271,35 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 	{
 		goto Exit;
 	}
+
+	unsigned char role = registers[5];
+	UCM_TYPEC_PARTNER mode = UcmTypeCPartnerInvalid;
+	if (((unsigned int)role >> 7) & 1u && ((unsigned int)role >> 6) & 1u && ((unsigned int)role >> 5) & 1u && ((unsigned int)role >> 4) & 1u)
+	{
+		// HOST + VBUS
+		mode = UcmTypeCPartnerUfp;
+	}
+	else
+	{
+		// Turn off VBUS (we will get there if role is 00 as well
+		if (((unsigned int)role >> 4) & 1u)
+		{
+			// DEVICE
+			mode = UcmTypeCPartnerDfp;
+		}
+		else if (((unsigned int)role >> 5) & 1u)
+		{
+			// CHARGER
+			mode = UcmTypeCPartnerPoweredCableNoUfp;
+		}
+		else if (((unsigned int)role >> 6) & 1u)
+		{
+			// HOST Powered
+			mode = UcmTypeCPartnerPoweredCableWithUfp;
+		}
+	}
+
+	USBC_ChangeRole(deviceContext, mode);
 
 Exit:
 	DbgPrint("LumiaUSBC: UC120_GetCurrentState Exit\n");

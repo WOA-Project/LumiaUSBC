@@ -54,6 +54,9 @@
     <ClInclude Include="WorkItems.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="USBRole.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Device.c">
@@ -75,6 +78,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="WorkItems.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="USBRole.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

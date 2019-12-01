@@ -69,11 +69,20 @@ LumiaUSBCSetDataRole(
 {
 	PCONNECTOR_CONTEXT connCtx;
 
-	UNREFERENCED_PARAMETER(DataRole);
+	//UNREFERENCED_PARAMETER(DataRole);
 
 	DbgPrint("LumiaUSBC: LumiaUSBCSetDataRole Entry\n");
 
 	connCtx = ConnectorGetContext(Connector);
+
+	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		L"DataRoleRequested",
+		REG_DWORD,
+		&DataRole,
+		sizeof(ULONG));
+
+	UcmConnectorDataDirectionChanged(Connector, TRUE, DataRole);
 
 	DbgPrint("LumiaUSBC: LumiaUSBCSetDataRole Exit\n");
 
@@ -606,13 +615,11 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	ULONG data = 0;
 	UNREFERENCED_PARAMETER(PreviousState);
 
 	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Entry Entry\n");
 
 	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
-	//PCONNECTOR_CONTEXT connCtx = ConnectorGetContext(devCtx->Connector);
 
 	status = LumiaUSBCOpenResources(devCtx);
 	if (!NT_SUCCESS(status)) {
@@ -620,68 +627,14 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		goto Exit;
 	}
 
-	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS Params;
-	UCM_CONNECTOR_TYPEC_ATTACH_PARAMS_INIT(&Params, UcmTypeCPartnerUfp);
-	Params.CurrentAdvertisement = UcmTypeCCurrentDefaultUsb;
-	UcmConnectorTypeCAttach(devCtx->Connector, &Params);
-
-	unsigned char value = (unsigned char)0;
-
+	unsigned char value = (unsigned char)1;
 	SetGPIO(devCtx, devCtx->PolGpio, &value);
+
+	value = (unsigned char)0;
 	SetGPIO(devCtx, devCtx->AmselGpio, &value); // high = HDMI only, medium (unsupported) = USB only, low = both
+
 	value = (unsigned char)1;
 	SetGPIO(devCtx, devCtx->EnGpio, &value);
-	
-	if (!NT_SUCCESS(MyReadRegistryValue(
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)L"VbusEnable",
-		REG_DWORD,
-		&data,
-		sizeof(ULONG))))
-	{
-		data = 0;
-	}
-	value = !!data;
-	SetGPIO(devCtx, devCtx->VbusGpio, &value);
-	if (data) {
-		UCM_PD_POWER_DATA_OBJECT Pdos[1];
-		UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
-
-		Pdos[0].FixedSupplyPdo.VoltageIn50mV = 100;         // 5V
-		Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 50;  // 500 mA
-		UcmConnectorPdSourceCaps(devCtx->Connector, Pdos, 1);
-		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
-		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
-		PdParams.ChargingState = UcmChargingStateNotCharging;
-		UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
-		UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSource);
-		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
-	}
-	else
-	{
-		UCM_PD_POWER_DATA_OBJECT Pdos[1];
-		UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
-
-		Pdos[0].FixedSupplyPdo.VoltageIn50mV = 100;         // 5V
-		Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 50;  // 500 mA - can be overridden in Registry
-		if (NT_SUCCESS(MyReadRegistryValue(
-			(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-			(PCWSTR)L"ChargeCurrent",
-			REG_DWORD,
-			&data,
-			sizeof(ULONG))))
-		{
-			Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = data / 10;
-		}
-		UcmConnectorPdPartnerSourceCaps(devCtx->Connector, Pdos, 1);
-		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
-		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
-		PdParams.ChargingState = UcmChargingStateNominalCharging;
-		UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
-		UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSink);
-		UcmConnectorTypeCCurrentAdChanged(devCtx->Connector, UcmTypeCCurrent3000mA);
-		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
-	}
 
 Exit:
 	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Entry Exit\n");

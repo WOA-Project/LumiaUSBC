@@ -17,7 +17,7 @@ DefaultDestDir = 12
 1 = %DiskName%,,,""
 
 [SourceDisksFiles]
-LumiaUSBCKm.sys  = 1,,
+LumiaUSBCKm.sys = 1,,
 
 ;*****************************************
 ; Install Section
@@ -37,7 +37,7 @@ LumiaUSBCKm.sys
 
 ;-------------- Service installation
 [LumiaUSBCKm_Device.NT.Services]
-AddService = LumiaUSBCKm,%SPSVCINST_ASSOCSERVICE%, LumiaUSBCKm_Service_Inst
+AddService = LumiaUSBCKm, %SPSVCINST_ASSOCSERVICE%, LumiaUSBCKm_Service_Inst
 
 ; -------------- LumiaUSBCKm driver install sections
 [LumiaUSBCKm_Service_Inst]
@@ -55,8 +55,9 @@ KmdfService =  LumiaUSBCKm, LumiaUSBCKm_wdfsect
 KmdfLibraryVersion = $KMDFVERSION$
 
 [Strings]
-SPSVCINST_ASSOCSERVICE= 0x00000002
-ManufacturerName="LumiaWOA Project"
-DiskName = "LumiaUSBCKm Installation Disk"
-LumiaUSBCKm.DeviceDesc = "LumiaUSBCKm Device (Pol=1, iteration=33)"
-LumiaUSBCKm.SVCDESC = "LumiaUSBCKm Service"
+SPSVCINST_ASSOCSERVICE = 0x00000002
+
+ManufacturerName       = "LumiaWoA authors"
+DiskName               = "LumiaUSBCKm Installation Disk"
+LumiaUSBCKm.DeviceDesc = "LumiaUSBCKm Device (Pol=1, iteration=35)"
+LumiaUSBCKm.SVCDESC    = "LumiaUSBCKm Service"

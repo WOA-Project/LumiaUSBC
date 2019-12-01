@@ -48,7 +48,7 @@ typedef struct _DEVICE_CONTEXT
 
 typedef struct _CONNECTOR_CONTEXT
 {
-	int dummy;
+	UCM_TYPEC_PARTNER partner;
 
 } CONNECTOR_CONTEXT, *PCONNECTOR_CONTEXT;
 
