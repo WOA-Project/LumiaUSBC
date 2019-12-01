@@ -279,17 +279,22 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 	side = registers[5] > registers[6];
 
 	// Nothing is connected
-	if (registers[5] == registers[6] == (unsigned char)0)
+	if ((unsigned int)registers[5] == 0u && (unsigned int)registers[6] == 0u)
 	{
+		DbgPrint("LumiaUSBC: Connector is empty!\n");
+
 		status = USBC_ChangeRole(deviceContext, mode, side);
 		goto Exit;
 	}
+
+	DbgPrint("LumiaUSBC: DetectedSide=%x\n", side);
 
 	// We connected a dongle, turn on VBUS
 	if (newPowerRole)
 	{
 		// HOST + VBUS
 		mode = UcmTypeCPartnerUfp;
+		DbgPrint("LumiaUSBC: VBus will be turned on\n");
 	}
 	else
 	{
@@ -316,6 +321,8 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 			mode = UcmTypeCPartnerPoweredCableNoUfp;
 		}
 	}
+
+	DbgPrint("LumiaUSBC: CurrentState=%x\n", mode);
 
 	status = USBC_ChangeRole(deviceContext, mode, side);
 
