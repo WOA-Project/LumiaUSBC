@@ -1,0 +1,6 @@
+EXTERN_C_START
+
+NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value);
+NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value);
+
+EXTERN_C_END

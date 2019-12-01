@@ -2,7 +2,7 @@
 
 Module Name:
 
-	device.c - Device handling events for example driver.
+	device.c - Device handling events for the UC120 driver.
 
 Abstract:
 
@@ -15,536 +15,51 @@ Environment:
 --*/
 
 #include "driver.h"
-#include "device.tmh"
 #define RESHUB_USE_HELPER_ROUTINES
 #include <reshub.h>
-#include <gpio.h>
 #include <wdf.h>
 
+#include "GPIO.h"
+#include "SPI.h"
+#include "UC120.h"
+#include "Registry.h"
+#include "WorkItems.h"
+
+#include "device.tmh"
 
 EVT_WDF_DEVICE_PREPARE_HARDWARE LumiaUSBCDevicePrepareHardware;
-EVT_UCM_CONNECTOR_SET_DATA_ROLE     LumiaUSBCSetDataRole;
+EVT_WDF_DEVICE_RELEASE_HARDWARE LumiaUSBCDeviceReleaseHardware;
+EVT_UCM_CONNECTOR_SET_DATA_ROLE LumiaUSBCSetDataRole;
 EVT_WDF_DEVICE_D0_ENTRY LumiaUSBCDeviceD0Entry;
+EVT_WDF_DEVICE_D0_EXIT LumiaUSBCDeviceD0Exit;
+EVT_WDF_DEVICE_SELF_MANAGED_IO_INIT LumiaUSBCSelfManagedIoInit;
 
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length);
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length);
-NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value);
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value);
+NTSTATUS LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit);
 
+// Interrupt routines
 BOOLEAN EvtInterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID);
-void Uc120InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
-void PlugDetInterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
-void Mystery1InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
-void Mystery2InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
-NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device);
+
+NTSTATUS Uc120InterruptEnable(WDFINTERRUPT Interrupt, WDFDEVICE AssociatedDevice);
+NTSTATUS Uc120InterruptDisable(WDFINTERRUPT Interrupt, WDFDEVICE AssociatedDevice);
+
+// Interrupt work items
+void    Uc120InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
+void    PlugDetInterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
+void    Mystery1InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
+void    Mystery2InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
+
+// IO routines
+NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, WDFIOTARGET* target);
+NTSTATUS LumiaUSBCProbeResources(PDEVICE_CONTEXT DeviceContext, WDFCMRESLIST ResourcesTranslated, WDFCMRESLIST ResourcesRaw);
+NTSTATUS LumiaUSBCOpenResources(PDEVICE_CONTEXT ctx);
+void LumiaUSBCCloseResources(PDEVICE_CONTEXT ctx);
+
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (PAGE, LumiaUSBCKmCreateDevice)
 #pragma alloc_text (PAGE, LumiaUSBCDevicePrepareHardware)
 #pragma alloc_text (PAGE, LumiaUSBCSetDataRole)
 #endif
-
-#pragma region UC120 Communication
-
-NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, DWORD context)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	unsigned char value = 0;
-	wchar_t buf[260];
-
-	PCWSTR contextStr = L"REG";
-	if (context == 0)
-	{
-		contextStr = L"INIT";
-	}
-	else if (context == 1)
-	{
-		contextStr = L"PLUGDET";
-	}
-	else if (context == 2)
-	{
-		contextStr = L"UC120";
-	}
-
-	unsigned char registers[8];
-
-	memset(registers, 0, sizeof(registers));
-
-	status = ReadRegister(deviceContext, 0, registers + 0, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 1, registers + 1, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 2, registers + 2, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 5, registers + 3, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 7, registers + 4, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 9, registers + 5, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 10, registers + 6, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 11, registers + 7, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	swprintf(buf, L"%ls_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", contextStr, registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
-	DbgPrint("LumiaUSBC: %ls\n", buf);
-
-	value = 0;
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&value,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-Exit:
-	return status;
-}
-
-NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, DWORD context)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	unsigned char data = 0;
-	wchar_t buf[260];
-	ULONG outgoingMessageSize, incomingMessageSize, isCableConnected, newPowerRole, newDataRole, vconnRoleSwitch = 0;
-
-	PCWSTR contextStr = L"REG";
-	if (context == 0)
-	{
-		contextStr = L"INIT";
-	}
-	else if (context == 1)
-	{
-		contextStr = L"PLUGDET";
-	}
-	else if (context == 2)
-	{
-		contextStr = L"UC120";
-	}
-	else if (context == 3)
-	{
-		contextStr = L"MYS1";
-	}
-	else if (context == 4)
-	{
-		contextStr = L"MYS2";
-	}
-
-	unsigned char registers[8];
-
-	memset(registers, 0, sizeof(registers));
-
-	status = ReadRegister(deviceContext, 0, registers + 0, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 1, registers + 1, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 2, registers + 2, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 5, registers + 3, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 7, registers + 4, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 9, registers + 5, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 10, registers + 6, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 11, registers + 7, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	swprintf(buf, L"%ls_%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x", contextStr, registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
-	DbgPrint("LumiaUSBC: %ls\n", buf);
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&data,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	data = registers[0];
-	outgoingMessageSize = data & 31u; // 0-4
-
-	data = registers[1];
-	incomingMessageSize = data & 31u; // 0-4
-
-	data = registers[2];
-	isCableConnected = (data & 60u) >> 2u; // 2-5
-
-	data = registers[3];
-	newPowerRole = (unsigned int)data & 1u; // 0
-	newDataRole = (((unsigned int)data >> 2) & 1u); // 2
-	vconnRoleSwitch = (((unsigned int)data >> 5) & 1u); // 5
-
-	swprintf(buf, L"%ls_%05x-%05x-%04x-%01x-%01x-%01x", contextStr, outgoingMessageSize, incomingMessageSize, isCableConnected, newPowerRole, newDataRole, vconnRoleSwitch);
-	DbgPrint("LumiaUSBC: %ls\n", buf);
-
-	data = 0;
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)buf,
-		REG_DWORD,
-		&data,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"NewPowerRole",
-		REG_DWORD,
-		&newPowerRole,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"NewDataRole",
-		REG_DWORD,
-		&newDataRole,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"VconnRoleSwitch",
-		REG_DWORD,
-		&vconnRoleSwitch,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-Exit:
-	return status;
-}
-
-NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	unsigned char data = 0;
-
-	data = 0xFF; // Clear to 0xFF
-	status = WriteRegister(deviceContext, 2, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-Exit:
-	return status;
-}
-
-NTSTATUS UC120_InterruptsEnable(PDEVICE_CONTEXT deviceContext)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	unsigned char data = 0;
-
-	data = 0xFF; // Clear to 0xFF
-	status = WriteRegister(deviceContext, 2, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = WriteRegister(deviceContext, 3, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 4, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	data |= 1; // Turn on bit 1
-	status = WriteRegister(deviceContext, 4, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 5, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	data &= ~0x80; // Clear bit 7
-	status = WriteRegister(deviceContext, 5, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-Exit:
-	return status;
-}
-
-NTSTATUS UC120_InterruptsDisable(PDEVICE_CONTEXT deviceContext)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	unsigned char data = 0;
-
-	status = ReadRegister(deviceContext, 4, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	data &= ~1; // Turn off bit 1
-	status = WriteRegister(deviceContext, 4, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-Exit:
-	return status;
-}
-
-NTSTATUS UC120_D0Entry(PDEVICE_CONTEXT deviceContext)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	unsigned char data = 0;
-
-	status = ReadRegister(deviceContext, 4, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-	data |= 6; // Turn on bit 1 and 2
-	status = WriteRegister(deviceContext, 4, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 5, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-	data |= 88; // Turn on bit 3 and 7
-	status = WriteRegister(deviceContext, 5, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = ReadRegister(deviceContext, 13, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-	data |= 2; // Turn on bit 1
-	data &= ~1; // Turn off bit 0
-	status = WriteRegister(deviceContext, 13, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-Exit:
-	return status;
-}
-
-NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned char* calibrationFile, DWORD length)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	switch (length)
-	{
-	case 10:
-	{
-		status = WriteRegister(deviceContext, 18, calibrationFile + 0, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 19, calibrationFile + 1, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 20, calibrationFile + 2, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 21, calibrationFile + 3, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 26, calibrationFile + 4, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 22, calibrationFile + 5, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 23, calibrationFile + 6, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 24, calibrationFile + 7, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 25, calibrationFile + 8, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 27, calibrationFile + 9, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		break;
-	}
-	case 8:
-	{
-		status = WriteRegister(deviceContext, 18, calibrationFile + 0, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 19, calibrationFile + 1, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 20, calibrationFile + 2, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 21, calibrationFile + 3, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 22, calibrationFile + 4, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 23, calibrationFile + 5, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 24, calibrationFile + 6, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		status = WriteRegister(deviceContext, 25, calibrationFile + 7, 1);
-		if (!NT_SUCCESS(status))
-		{
-			goto Exit;
-		}
-		break;
-	}
-	default:
-	{
-		status = STATUS_BAD_DATA;
-		goto Exit;
-	}
-	}
-
-Exit:
-	return status;
-}
-
-#pragma endregion
 
 NTSTATUS
 LumiaUSBCSetDataRole(
@@ -571,66 +86,6 @@ BOOLEAN EvtInterruptIsr(
 	WdfInterruptQueueWorkItemForIsr(Interrupt);
 
 	return TRUE;
-}
-
-void Uc120InterruptWorkItem(
-	WDFINTERRUPT Interrupt,
-	WDFOBJECT AssociatedObject
-)
-{
-	UNREFERENCED_PARAMETER(Interrupt);
-	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
-
-	DbgPrint("LumiaUSBC: Got an interrupt from the UC120!\n");
-
-	//UC120_GetCurrentRegisters(ctx, 2);
-	UC120_GetCurrentState(ctx, 2);
-	UC120_InterruptHandled(ctx);
-}
-
-void PlugDetInterruptWorkItem(
-	WDFINTERRUPT Interrupt,
-	WDFOBJECT AssociatedObject
-)
-{
-	UNREFERENCED_PARAMETER(Interrupt);
-	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
-
-	DbgPrint("LumiaUSBC: Got an interrupt from PLUGDET!\n");
-
-	//UC120_GetCurrentRegisters(ctx, 1);
-	UC120_GetCurrentState(ctx, 1);
-	UC120_InterruptHandled(ctx);
-}
-
-void Mystery1InterruptWorkItem(
-	WDFINTERRUPT Interrupt,
-	WDFOBJECT AssociatedObject
-)
-{
-	UNREFERENCED_PARAMETER(Interrupt);
-	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
-
-	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 1!\n");
-
-	//UC120_GetCurrentRegisters(ctx, 1);
-	UC120_GetCurrentState(ctx, 3);
-	UC120_InterruptHandled(ctx);
-}
-
-void Mystery2InterruptWorkItem(
-	WDFINTERRUPT Interrupt,
-	WDFOBJECT AssociatedObject
-)
-{
-	UNREFERENCED_PARAMETER(Interrupt);
-	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
-
-	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 2!\n");
-
-	//UC120_GetCurrentRegisters(ctx, 1);
-	UC120_GetCurrentState(ctx, 4);
-	UC120_InterruptHandled(ctx);
 }
 
 NTSTATUS Uc120InterruptEnable(
@@ -1048,141 +503,6 @@ NTSTATUS LumiaUSBCDeviceReleaseHardware(
 	return STATUS_SUCCESS;
 }
 
-#define IOCTL_QUP_SPI_CS_MANIPULATION 0x610
-
-#define IOCTL_QUP_SPI_AUTO_CS     CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x2, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUP_SPI_ASSERT_CS   CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x1, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUP_SPI_DEASSERT_CS CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x0, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	WDF_MEMORY_DESCRIPTOR regDescriptor, outputDescriptor;
-	unsigned char command = (unsigned char)(reg << 3);
-
-	WdfObjectAcquireLock(ctx->Device);
-
-	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_ASSERT_CS, NULL, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
-	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &regDescriptor, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, length);
-
-	// need to read 3 times to get the correct value, for some reason
-	// NOTE: original driver does a full-duplex transfer here, where the 1st byte starts reading *before*
-	// the register ID is written, so possibly we will need 2 here instead!
-	for (int i = 0; i < 2; i++) {
-		status = WdfIoTargetSendReadSynchronously(ctx->Spi, NULL, &outputDescriptor, NULL, NULL, NULL);
-
-		if (!NT_SUCCESS(status))
-		{
-			WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-			WdfObjectReleaseLock(ctx->Device);
-			return status;
-		}
-	}
-
-	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-
-	WdfObjectReleaseLock(ctx->Device);
-
-	return status;
-}
-
-NTSTATUS WriteRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	WDF_MEMORY_DESCRIPTOR regDescriptor, inputDescriptor;
-	unsigned char command = (unsigned char)((reg << 3) | 1);
-
-	WdfObjectAcquireLock(ctx->Device);
-
-	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_ASSERT_CS, NULL, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
-	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &regDescriptor, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, value, length);
-	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &inputDescriptor, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-
-	WdfObjectReleaseLock(ctx->Device);
-
-	return status;
-}
-
-
-NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	WDF_MEMORY_DESCRIPTOR outputDescriptor;
-
-	UNREFERENCED_PARAMETER(ctx);
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, 1);
-
-	status = WdfIoTargetSendIoctlSynchronously(gpio, NULL, IOCTL_GPIO_READ_PINS, NULL, &outputDescriptor, NULL, NULL);
-
-	return status;
-}
-
-NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	WDF_MEMORY_DESCRIPTOR inputDescriptor, outputDescriptor;
-
-	UNREFERENCED_PARAMETER(ctx);
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, value, 1);
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, 1);
-
-	status = WdfIoTargetSendIoctlSynchronously(gpio, NULL, IOCTL_GPIO_WRITE_PINS, &inputDescriptor, &outputDescriptor, NULL, NULL);
-
-	return status;
-}
-
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
-{
-	return ReadRegisterReal(ctx, reg, value, length);
-}
-
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
-{
-	return WriteRegisterReal(ctx, reg, value, length);
-}
-
 NTSTATUS
 LumiaUSBCDevicePrepareHardware(
 	WDFDEVICE Device,
@@ -1255,46 +575,6 @@ LumiaUSBCDevicePrepareHardware(
 Exit:
 	DbgPrint("LumiaUSBC: LumiaUSBCDevicePrepareHardware Exit\n");
 	return status;
-}
-
-// I can't believe RtlWriteRegistryValue exists, but not RtlReadRegistryValue...
-NTSTATUS MyReadRegistryValue(PCWSTR registry_path, PCWSTR value_name, ULONG type,
-	PVOID data, ULONG length)
-{
-	UNICODE_STRING valname;
-	UNICODE_STRING keyname;
-	OBJECT_ATTRIBUTES attribs;
-	PKEY_VALUE_PARTIAL_INFORMATION pinfo;
-	HANDLE handle;
-	NTSTATUS rc;
-	ULONG len, reslen;
-
-	RtlInitUnicodeString(&keyname, registry_path);
-	RtlInitUnicodeString(&valname, value_name);
-
-	InitializeObjectAttributes(&attribs, &keyname, OBJ_CASE_INSENSITIVE,
-		NULL, NULL);
-	rc = ZwOpenKey(&handle, KEY_QUERY_VALUE, &attribs);
-	if (!NT_SUCCESS(rc))
-		return 0;
-
-	len = sizeof(KEY_VALUE_PARTIAL_INFORMATION) + length;
-	pinfo = ExAllocatePool(NonPagedPool, len);
-	rc = ZwQueryValueKey(handle, &valname, KeyValuePartialInformation,
-		pinfo, len, &reslen);
-	if ((NT_SUCCESS(rc) || rc == STATUS_BUFFER_OVERFLOW) &&
-		reslen >= (sizeof(KEY_VALUE_PARTIAL_INFORMATION) - 1) &&
-		(!type || pinfo->Type == type))
-	{
-		reslen = pinfo->DataLength;
-		memcpy(data, pinfo->Data, min(length, reslen));
-	}
-	else
-		reslen = 0;
-	ExFreePool(pinfo);
-
-	ZwClose(handle);
-	return rc;
 }
 
 NTSTATUS LumiaUSBCDeviceD0Entry(
@@ -1418,11 +698,32 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 
 	PoFxStartDevicePowerManagement(devCtx->PoHandle);
 
-	// Initialize the UC120
-	unsigned char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0D, 0x7D, 0x32, 0x5F, 0x9E };
+	// Tell PEP to turn on the clock
+	memset(input, 0, sizeof(input));
+	input[0] = 2;
+	input[7] = 2;
+	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("LumiaUSBC: PoFxPowerControl failed %x\n", status);
+		return status;
+	}
 
-	UC120_D0Entry(devCtx);
-	UC120_UploadCalibrationData(devCtx, initvals, sizeof(initvals));
+	// Initialize the UC120
+	unsigned char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B }; //{ 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0D, 0x7D, 0x32, 0x5F, 0x9E };
+
+	status = UC120_D0Entry(devCtx);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("LumiaUSBC: UC120_D0Entry failed %x\n", status);
+		return status;
+	}
+
+	status = UC120_UploadCalibrationData(devCtx, initvals, sizeof(initvals));
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("LumiaUSBC: UC120_UploadCalibrationData failed %x\n", status);
+		return status;
+	}
 
 	value = 0;
 
@@ -1454,16 +755,6 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	UC120_GetCurrentState(devCtx, 0);
 
 	UC120_InterruptsEnable(devCtx);
-
-	// Tell PEP to turn on the clock
-	memset(input, 0, sizeof(input));
-	input[0] = 2;
-	input[7] = 2;
-	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
-	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: PoFxPowerControl failed %x\n", status);
-		return status;
-	}
 
 	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Exit\n");
 	return status;

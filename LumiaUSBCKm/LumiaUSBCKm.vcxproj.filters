@@ -39,12 +39,42 @@
     <ClInclude Include="Trace.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SPI.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GPIO.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="UC120.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Registry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WorkItems.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Device.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Driver.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SPI.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GPIO.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UC120.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Registry.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WorkItems.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

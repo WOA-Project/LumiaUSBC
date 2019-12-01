@@ -40,12 +40,22 @@
   <ItemGroup>
     <ClCompile Include="Device.c" />
     <ClCompile Include="Driver.c" />
+    <ClCompile Include="GPIO.c" />
+    <ClCompile Include="Registry.c" />
+    <ClCompile Include="SPI.c" />
+    <ClCompile Include="UC120.c" />
+    <ClCompile Include="WorkItems.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Device.h" />
     <ClInclude Include="Driver.h" />
+    <ClInclude Include="GPIO.h" />
     <ClInclude Include="Public.h" />
+    <ClInclude Include="Registry.h" />
+    <ClInclude Include="SPI.h" />
     <ClInclude Include="Trace.h" />
+    <ClInclude Include="UC120.h" />
+    <ClInclude Include="WorkItems.h" />
   </ItemGroup>
   <ItemGroup>
     <Inf Include="LumiaUSBCKm.inf" />
