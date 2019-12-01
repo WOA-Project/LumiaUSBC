@@ -34,6 +34,8 @@ NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value);
 BOOLEAN EvtInterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID);
 void Uc120InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
 void PlugDetInterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
+void Mystery1InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
+void Mystery2InterruptWorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject);
 NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device);
 
 #ifdef ALLOC_PRAGMA
@@ -42,8 +44,6 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device);
 #pragma alloc_text (PAGE, LumiaUSBCSetDataRole)
 
 #pragma alloc_text (PAGE, EvtInterruptIsr)
-#pragma alloc_text (PAGE, Uc120InterruptWorkItem)
-#pragma alloc_text (PAGE, PlugDetInterruptWorkItem)
 #endif
 
 #pragma region UC120 Communication
@@ -159,6 +159,14 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, DWORD context)
 	{
 		contextStr = L"UC120";
 	}
+	else if (context == 3)
+	{
+		contextStr = L"MYS1";
+	}
+	else if (context == 4)
+	{
+		contextStr = L"MYS2";
+	}
 
 	unsigned char registers[8];
 
@@ -226,38 +234,14 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, DWORD context)
 		goto Exit;
 	}
 
-	/*status = ReadRegister(deviceContext, 0, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}*/
-
 	data = registers[0];
 	outgoingMessageSize = data & 31u; // 0-4
-
-	/*status = ReadRegister(deviceContext, 1, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}*/
 
 	data = registers[1];
 	incomingMessageSize = data & 31u; // 0-4
 
-	/*status = ReadRegister(deviceContext, 2, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}*/
-
 	data = registers[2];
 	isCableConnected = (data & 60u) >> 2u; // 2-5
-
-	/*status = ReadRegister(deviceContext, 5, &data, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}*/
 
 	data = registers[3];
 	newPowerRole = (unsigned int)data & 1u; // 0
@@ -621,6 +605,36 @@ void PlugDetInterruptWorkItem(
 	UC120_InterruptHandled(ctx);
 }
 
+void Mystery1InterruptWorkItem(
+	WDFINTERRUPT Interrupt,
+	WDFOBJECT AssociatedObject
+)
+{
+	UNREFERENCED_PARAMETER(Interrupt);
+	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
+
+	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 1!\n");
+
+	//UC120_GetCurrentRegisters(ctx, 1);
+	UC120_GetCurrentState(ctx, 3);
+	UC120_InterruptHandled(ctx);
+}
+
+void Mystery2InterruptWorkItem(
+	WDFINTERRUPT Interrupt,
+	WDFOBJECT AssociatedObject
+)
+{
+	UNREFERENCED_PARAMETER(Interrupt);
+	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
+
+	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 2!\n");
+
+	//UC120_GetCurrentRegisters(ctx, 1);
+	UC120_GetCurrentState(ctx, 4);
+	UC120_InterruptHandled(ctx);
+}
+
 NTSTATUS Uc120InterruptEnable(
 	WDFINTERRUPT Interrupt,
 	WDFDEVICE AssociatedDevice
@@ -699,20 +713,24 @@ LumiaUSBCProbeResources(
 {
 	PAGED_CODE();
 
-	DeviceContext->HaveResetGpio = FALSE;
-	DeviceContext->UseFakeSpi = FALSE;
+	//DeviceContext->HaveResetGpio = FALSE;
+	//DeviceContext->UseFakeSpi = FALSE;
 
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_INTERRUPT_CONFIG interruptConfig;
 	WDF_INTERRUPT_CONFIG interruptConfig2;
+	WDF_INTERRUPT_CONFIG interruptConfig3;
+	WDF_INTERRUPT_CONFIG interruptConfig4;
 	PCM_PARTIAL_RESOURCE_DESCRIPTOR descriptor = NULL;
 
 	BOOLEAN spiFound = FALSE;
 	ULONG gpioFound = 0;
 	ULONG interruptFound = 0;
 
-	ULONG UC120Interrupt = 0;
 	ULONG PlugDetInterrupt = 0;
+	ULONG UC120Interrupt = 0;
+	ULONG MysteryInterrupt1 = 0;
+	ULONG MysteryInterrupt2 = 0;
 
 	ULONG resourceCount;
 
@@ -748,27 +766,6 @@ LumiaUSBCProbeResources(
 					DeviceContext->EnGpioId.LowPart = descriptor->u.Connection.IdLowPart;
 					DeviceContext->EnGpioId.HighPart = descriptor->u.Connection.IdHighPart;
 					break;
-				case 4:
-					DeviceContext->ResetGpioId.LowPart = descriptor->u.Connection.IdLowPart;
-					DeviceContext->ResetGpioId.HighPart = descriptor->u.Connection.IdHighPart;
-					DeviceContext->HaveResetGpio = TRUE;
-					break;
-				case 5:
-					DeviceContext->FakeSpiMosiId.LowPart = descriptor->u.Connection.IdLowPart;
-					DeviceContext->FakeSpiMosiId.HighPart = descriptor->u.Connection.IdHighPart;
-					break;
-				case 6:
-					DeviceContext->FakeSpiMisoId.LowPart = descriptor->u.Connection.IdLowPart;
-					DeviceContext->FakeSpiMisoId.HighPart = descriptor->u.Connection.IdHighPart;
-					break;
-				case 7:
-					DeviceContext->FakeSpiCsId.LowPart = descriptor->u.Connection.IdLowPart;
-					DeviceContext->FakeSpiCsId.HighPart = descriptor->u.Connection.IdHighPart;
-					break;
-				case 8:
-					DeviceContext->FakeSpiClkId.LowPart = descriptor->u.Connection.IdLowPart;
-					DeviceContext->FakeSpiClkId.HighPart = descriptor->u.Connection.IdHighPart;
-					break;
 				default:
 					break;
 				}
@@ -795,11 +792,17 @@ LumiaUSBCProbeResources(
 			
 			switch (interruptFound)
 			{
-			case 2:
+			case 0:
 				PlugDetInterrupt = i;
 				break;
-			case 3:
+			case 1:
 				UC120Interrupt = i;
+				break;
+			case 2:
+				MysteryInterrupt1 = i;
+				break;
+			case 3:
+				MysteryInterrupt2 = i;
 				break;
 			default:
 				break;
@@ -816,20 +819,7 @@ LumiaUSBCProbeResources(
 		}
 	}
 
-	if (!spiFound && gpioFound >= 8)
-	{
-		spiFound = TRUE;
-		DeviceContext->UseFakeSpi = TRUE;
-	}
-
-	if (!spiFound || gpioFound < 4)
-	{
-		DbgPrint("LumiaUSBC: Not all resources were found, SPI = %d, GPIO = %d, Interrupts = %d\n", spiFound, gpioFound, interruptFound);
-		status = STATUS_INSUFFICIENT_RESOURCES;
-		goto Exit;
-	}
-
-	if (interruptFound < 4)
+	if (!spiFound || gpioFound < 4 || interruptFound < 4)
 	{
 		DbgPrint("LumiaUSBC: Not all resources were found, SPI = %d, GPIO = %d, Interrupts = %d\n", spiFound, gpioFound, interruptFound);
 		status = STATUS_INSUFFICIENT_RESOURCES;
@@ -865,7 +855,7 @@ LumiaUSBCProbeResources(
 
 	interruptConfig2.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
 
-	status = WdfInterruptCreate(
+	/*status = WdfInterruptCreate(
 		DeviceContext->Device,
 		&interruptConfig2,
 		WDF_NO_OBJECT_ATTRIBUTES,
@@ -873,6 +863,44 @@ LumiaUSBCProbeResources(
 	if (!NT_SUCCESS(status))
 	{
 		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for plug detection %x\n", status);
+		goto Exit;
+	}*/
+
+	WDF_INTERRUPT_CONFIG_INIT(&interruptConfig3, EvtInterruptIsr, NULL);
+
+	interruptConfig3.PassiveHandling = TRUE;
+	interruptConfig3.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, MysteryInterrupt1);
+	interruptConfig3.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, MysteryInterrupt1);
+
+	interruptConfig3.EvtInterruptWorkItem = Mystery1InterruptWorkItem;
+
+	status = WdfInterruptCreate(
+		DeviceContext->Device,
+		&interruptConfig3,
+		WDF_NO_OBJECT_ATTRIBUTES,
+		&DeviceContext->MysteryInterrupt1);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for mystery 1 %x\n", status);
+		goto Exit;
+	}
+
+	WDF_INTERRUPT_CONFIG_INIT(&interruptConfig4, EvtInterruptIsr, NULL);
+
+	interruptConfig4.PassiveHandling = TRUE;
+	interruptConfig4.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, MysteryInterrupt2);
+	interruptConfig4.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, MysteryInterrupt2);
+
+	interruptConfig4.EvtInterruptWorkItem = Mystery2InterruptWorkItem;
+
+	status = WdfInterruptCreate(
+		DeviceContext->Device,
+		&interruptConfig4,
+		WDF_NO_OBJECT_ATTRIBUTES,
+		&DeviceContext->MysteryInterrupt2);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for mystery 2 %x\n", status);
 		goto Exit;
 	}
 
@@ -890,13 +918,10 @@ LumiaUSBCOpenResources(
 	NTSTATUS status = STATUS_SUCCESS;
 	DbgPrint("LumiaUSBC: LumiaUSBCOpenResources Entry\n");
 
-	if (!(ctx->UseFakeSpi)) {
-		status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
-		if (!NT_SUCCESS(status)) {
-			DbgPrint("LumiaUSBC: OpenIOTarget failed for SPI %x Falling back to fake SPI.\n", status);
-			ctx->UseFakeSpi = TRUE;
-			status = STATUS_SUCCESS; // return status;
-		}
+	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("LumiaUSBC: OpenIOTarget failed for SPI %x Falling back to fake SPI.\n", status);
+		return status;
 	}
 
 	status = OpenIOTarget(ctx, ctx->VbusGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->VbusGpio);
@@ -921,38 +946,6 @@ LumiaUSBCOpenResources(
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("LumiaUSBC: OpenIOTarget failed for mux enable GPIO %x\n", status);
 		return status;
-	}
-
-	if (ctx->HaveResetGpio) {
-		status = OpenIOTarget(ctx, ctx->ResetGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->ResetGpio);
-		if (!(NT_SUCCESS(status))) {
-			DbgPrint("LumiaUSBC: OpenIOTarget failed for chip reset GPIO %x\n", status);
-			ctx->HaveResetGpio = FALSE;
-		}
-		status = STATUS_SUCCESS; // this GPIO is optional - make sure we never fail on it missing
-	}
-
-	if (ctx->UseFakeSpi) {
-		status = OpenIOTarget(ctx, ctx->FakeSpiMosiId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiMosi);
-		if (!NT_SUCCESS(status)) {
-			DbgPrint("LumiaUSBC: OpenIOTarget failed for fake SPI MOSI line %x\n", status);
-			return status;
-		}
-		status = OpenIOTarget(ctx, ctx->FakeSpiMisoId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiMiso);
-		if (!NT_SUCCESS(status)) {
-			DbgPrint("LumiaUSBC: OpenIOTarget failed for fake SPI MISO line %x\n", status);
-			return status;
-		}
-		status = OpenIOTarget(ctx, ctx->FakeSpiCsId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiCs);
-		if (!NT_SUCCESS(status)) {
-			DbgPrint("LumiaUSBC: OpenIOTarget failed for fake SPI CS# line %x\n", status);
-			return status;
-		}
-		status = OpenIOTarget(ctx, ctx->FakeSpiClkId, GENERIC_READ | GENERIC_WRITE, &ctx->FakeSpiClk);
-		if (!NT_SUCCESS(status)) {
-			DbgPrint("LumiaUSBC: OpenIOTarget failed for fake SPI clock line %x\n", status);
-			return status;
-		}
 	}
 
 	DbgPrint("LumiaUSBC: LumiaUSBCOpenResources Exit\n");
@@ -984,26 +977,6 @@ LumiaUSBCCloseResources(
 
 	if (ctx->EnGpio) {
 		WdfIoTargetClose(ctx->EnGpio);
-	}
-
-	if (ctx->ResetGpio) {
-		WdfIoTargetClose(ctx->ResetGpio);
-	}
-
-	if (ctx->FakeSpiClk) {
-		WdfIoTargetClose(ctx->FakeSpiClk);
-	}
-
-	if (ctx->FakeSpiCs) {
-		WdfIoTargetClose(ctx->FakeSpiCs);
-	}
-
-	if (ctx->FakeSpiMiso) {
-		WdfIoTargetClose(ctx->FakeSpiMiso);
-	}
-
-	if (ctx->FakeSpiMosi) {
-		WdfIoTargetClose(ctx->FakeSpiMosi);
 	}
 
 	DbgPrint("LumiaUSBC: LumiaUSBCCloseResources Exit\n");
@@ -1113,8 +1086,6 @@ NTSTATUS ReadRegisterReal(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, UL
 	// need to read 3 times to get the correct value, for some reason
 	// NOTE: original driver does a full-duplex transfer here, where the 1st byte starts reading *before*
 	// the register ID is written, so possibly we will need 2 here instead!
-
-        // Temp change to 2
 	for (int i = 0; i < 2; i++) {
 		status = WdfIoTargetSendReadSynchronously(ctx->Spi, NULL, &outputDescriptor, NULL, NULL, NULL);
 
@@ -1204,167 +1175,14 @@ NTSTATUS SetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value)
 	return status;
 }
 
-NTSTATUS ReadRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
-{
-	NTSTATUS status;
-	unsigned char data;
-	unsigned char command = (unsigned char)(reg << 3);
-	LARGE_INTEGER delay;
-	int i;
-	unsigned int j;
-
-	delay.QuadPart = -10; // 1ms
-
-	// Select the chip
-	data = 0;
-	status = SetGPIO(ctx, ctx->FakeSpiCs, &data);
-	if (!NT_SUCCESS(status))
-		return status;
-
-	// Send the read command bit by bit, MSB first
-	for (i = 7; i >= 0; i--) {
-		KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-		data = (command >> i) & 1;
-		status = SetGPIO(ctx, ctx->FakeSpiMosi, &data);
-		if (!NT_SUCCESS(status))
-			return status;
-
-		data = 0;
-		status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
-		if (!NT_SUCCESS(status))
-			return status;
-
-		KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-		data = 1;
-		status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
-		if (!NT_SUCCESS(status))
-			return status;
-	}
-
-	// Receive the result, MSB first
-	for (j = 0; j < length; j++) {
-		value[j] = 0;
-		for (i = 7; i >= 0; i--) {
-			KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-			data = 0;
-			status = GetGPIO(ctx, ctx->FakeSpiMiso, &data);
-			if (!NT_SUCCESS(status))
-				return status;
-
-			value[j] |= (data & 1) << i;
-
-			data = 0;
-			status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
-			if (!NT_SUCCESS(status))
-				return status;
-
-			KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-			data = 1;
-			status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
-			if (!NT_SUCCESS(status))
-				return status;
-		}
-	}
-
-	// Deselect the chip
-	data = 1;
-	status = SetGPIO(ctx, ctx->FakeSpiCs, &data);
-	if (!NT_SUCCESS(status))
-		return status;
-
-	return status;
-}
-
-NTSTATUS WriteRegisterFake(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
-{
-	NTSTATUS status;
-	unsigned char data;
-	unsigned char command = (unsigned char)((reg << 3) | 1);
-	LARGE_INTEGER delay;
-	int i;
-	unsigned int j;
-
-	delay.QuadPart = -10; // 1ms
-
-	// Select the chip
-	data = 0;
-	status = SetGPIO(ctx, ctx->FakeSpiCs, &data);
-	if (!NT_SUCCESS(status))
-		return status;
-
-	// Send the write command bit by bit, MSB first
-	for (i = 7; i >= 0; i--) {
-		KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-		data = (command >> i) & 1;
-		status = SetGPIO(ctx, ctx->FakeSpiMosi, &data);
-		if (!NT_SUCCESS(status))
-			return status;
-
-		data = 0;
-		status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
-		if (!NT_SUCCESS(status))
-			return status;
-
-		KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-		data = 1;
-		status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
-		if (!NT_SUCCESS(status))
-			return status;
-	}
-
-	// Send the data, MSB 
-	for (j = 0; j < length; j++) {
-		for (i = 7; i >= 0; i--) {
-			KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-			data = (value[j] >> i) & 1;
-			status = SetGPIO(ctx, ctx->FakeSpiMosi, &data);
-			if (!NT_SUCCESS(status))
-				return status;
-
-			data = 0;
-			status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
-			if (!NT_SUCCESS(status))
-				return status;
-
-			KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-			data = 1;
-			status = SetGPIO(ctx, ctx->FakeSpiClk, &data);
-			if (!NT_SUCCESS(status))
-				return status;
-		}
-	}
-
-	// Deselect the chip
-	data = 1;
-	status = SetGPIO(ctx, ctx->FakeSpiCs, &data);
-	if (!NT_SUCCESS(status))
-		return status;
-
-	return status;
-}
-
 NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
 {
-	if (ctx->UseFakeSpi)
-		return ReadRegisterFake(ctx, reg, value, length);
-	else
-		return ReadRegisterReal(ctx, reg, value, length);
+	return ReadRegisterReal(ctx, reg, value, length);
 }
 
 NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
 {
-	if (ctx->UseFakeSpi)
-		return WriteRegisterFake(ctx, reg, value, length);
-	else
-		return WriteRegisterReal(ctx, reg, value, length);
+	return WriteRegisterReal(ctx, reg, value, length);
 }
 
 NTSTATUS
@@ -1511,69 +1329,7 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	SetGPIO(devCtx, devCtx->AmselGpio, &value); // high = HDMI only, medium (unsupported) = USB only, low = both
 	value = (unsigned char)1;
 	SetGPIO(devCtx, devCtx->EnGpio, &value);
-	/*
-	SetGPIO(devCtx, devCtx->FakeSpiClk, &value);
-	if (devCtx->HaveResetGpio) {
-		delay.QuadPart = -2000; // 200us
-		value = (unsigned char)0;
-		SetGPIO(devCtx, devCtx->ResetGpio, &value);
-		SetGPIO(devCtx, devCtx->FakeSpiCs, &value);
-		KeDelayExecutionThread(KernelMode, TRUE, &delay);
-		value = (unsigned char)1;
-		SetGPIO(devCtx, devCtx->ResetGpio, &value);
-
-		delay.QuadPart = -12000; // 1200us
-		KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-		delay.QuadPart = -10; // 1us
-		value = (unsigned char)1;
-		SetGPIO(devCtx, devCtx->FakeSpiCs, &value);
-
-		for (i = 0; i < 8; i++) {
-			value = (unsigned char)0;
-			SetGPIO(devCtx, devCtx->FakeSpiClk, &value);
-			KeDelayExecutionThread(KernelMode, TRUE, &delay);
-			value = (unsigned char)1;
-			SetGPIO(devCtx, devCtx->FakeSpiClk, &value);
-			KeDelayExecutionThread(KernelMode, TRUE, &delay);
-		}
-
-		value = (unsigned char)0;
-		SetGPIO(devCtx, devCtx->FakeSpiCs, &value);
-
-		for (i = 0; i < 71339; i++) {
-			for (j = 7; j >= 0; j--) {
-				//KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-				value = (unsigned char)((bitstream[i] >> j) & 1);
-				status = SetGPIO(devCtx, devCtx->FakeSpiMosi, &value);
-				if (!NT_SUCCESS(status))
-					return status;
-
-				value = (unsigned char)0;
-				status = SetGPIO(devCtx, devCtx->FakeSpiClk, &value);
-				if (!NT_SUCCESS(status))
-					return status;
-
-				//KeDelayExecutionThread(KernelMode, TRUE, &delay);
-
-				value = (unsigned char)1;
-				status = SetGPIO(devCtx, devCtx->FakeSpiClk, &value);
-				if (!NT_SUCCESS(status))
-					return status;
-			}
-		}
-
-		for (i = 0; i < 150; i++) {
-			value = (unsigned char)0;
-			SetGPIO(devCtx, devCtx->FakeSpiClk, &value);
-			//KeDelayExecutionThread(KernelMode, TRUE, &delay);
-			value = (unsigned char)1;
-			SetGPIO(devCtx, devCtx->FakeSpiClk, &value);
-			//KeDelayExecutionThread(KernelMode, TRUE, &delay);
-		}
-	}
-	*/
+	
 	if (!NT_SUCCESS(MyReadRegistryValue(
 		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
 		(PCWSTR)L"VbusEnable",
