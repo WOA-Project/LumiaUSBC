@@ -274,20 +274,19 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 
 	unsigned int side = 1;
 	UCM_TYPEC_PARTNER mode = UcmTypeCPartnerInvalid;
-	unsigned char role = registers[5];
 
-	if (role == (unsigned char)0)
-	{
-		role = registers[6];
-		side = 0;
-	}
-	if (role == (unsigned char)0)
+	// Detect the side by measuring which CC value is the highest
+	side = registers[5] > registers[6];
+
+	// Nothing is connected
+	if (registers[5] == registers[6] == (unsigned char)0)
 	{
 		status = USBC_ChangeRole(deviceContext, mode, side);
 		goto Exit;
 	}
 
-	if (((unsigned int)role >> 7) & 1u && ((unsigned int)role >> 6) & 1u && ((unsigned int)role >> 5) & 1u && ((unsigned int)role >> 4) & 1u)
+	// We connected a dongle, turn on VBUS
+	if (newPowerRole)
 	{
 		// HOST + VBUS
 		mode = UcmTypeCPartnerUfp;
@@ -295,20 +294,26 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 	else
 	{
 		// VBUS off
-		if (((unsigned int)role >> 4) & 1u)
+
+		if (registers[2] == 0x40)
 		{
 			// DEVICE
 			mode = UcmTypeCPartnerDfp;
 		}
-		else if (((unsigned int)role >> 5) & 1u)
+		else if (registers[2] == 0x80)
+		{
+			// HOST
+			mode = UcmTypeCPartnerPoweredCableWithUfp;
+		}
+		else if (registers[2] == 0xc0)
 		{
 			// CHARGER
 			mode = UcmTypeCPartnerPoweredCableNoUfp;
 		}
-		else if (((unsigned int)role >> 6) & 1u)
+		else
 		{
-			// HOST Powered
-			mode = UcmTypeCPartnerPoweredCableWithUfp;
+			// No idea - report as UcmTypeCPartnerPoweredCableNoUfp
+			mode = UcmTypeCPartnerPoweredCableNoUfp;
 		}
 	}
 
