@@ -299,27 +299,36 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 	else
 	{
 		// VBUS off
+		mode = UcmTypeCPartnerPoweredCableWithUfp;
 
-		if (registers[2] == 0x40)
+		/*if (context == 2)
 		{
-			// DEVICE
-			mode = UcmTypeCPartnerDfp;
-		}
-		else if (registers[2] == 0x80)
-		{
-			// HOST
-			mode = UcmTypeCPartnerPoweredCableWithUfp;
-		}
-		else if (registers[2] == 0xc0)
-		{
-			// CHARGER
-			mode = UcmTypeCPartnerPoweredCableNoUfp;
+			if (registers[2] == 0x40)
+			{
+				// DEVICE
+				mode = UcmTypeCPartnerDfp;
+			}
+			else if (registers[2] == 0x80)
+			{
+				// HOST
+				mode = UcmTypeCPartnerPoweredCableWithUfp;
+			}
+			else if (registers[2] == 0xc0)
+			{
+				// CHARGER
+				mode = UcmTypeCPartnerPoweredCableNoUfp;
+			}
+			else
+			{
+				// No idea - report as UcmTypeCPartnerPoweredCableNoUfp
+				mode = UcmTypeCPartnerPoweredCableNoUfp;
+			}
 		}
 		else
 		{
 			// No idea - report as UcmTypeCPartnerPoweredCableNoUfp
 			mode = UcmTypeCPartnerPoweredCableNoUfp;
-		}
+		}*/
 	}
 
 	DbgPrint("LumiaUSBC: CurrentState=%x\n", mode);
