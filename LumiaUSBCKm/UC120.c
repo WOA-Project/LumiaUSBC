@@ -283,7 +283,8 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 	}
 	if (role == (unsigned char)0)
 	{
-		USBC_ChangeRole(deviceContext, mode, side);
+		status = USBC_ChangeRole(deviceContext, mode, side);
+		goto Exit;
 	}
 
 	if (((unsigned int)role >> 7) & 1u && ((unsigned int)role >> 6) & 1u && ((unsigned int)role >> 5) & 1u && ((unsigned int)role >> 4) & 1u)
@@ -293,7 +294,7 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 	}
 	else
 	{
-		// Turn off VBUS (we will get there if role is 00 as well
+		// VBUS off
 		if (((unsigned int)role >> 4) & 1u)
 		{
 			// DEVICE
@@ -311,7 +312,7 @@ NTSTATUS UC120_GetCurrentState(PDEVICE_CONTEXT deviceContext, unsigned int conte
 		}
 	}
 
-	USBC_ChangeRole(deviceContext, mode, side);
+	status = USBC_ChangeRole(deviceContext, mode, side);
 
 Exit:
 	DbgPrint("LumiaUSBC: UC120_GetCurrentState Exit\n");
