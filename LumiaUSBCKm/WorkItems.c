@@ -39,8 +39,8 @@ void PlugDetInterruptWorkItem(
 	WDFOBJECT AssociatedObject
 )
 {
-	UNREFERENCED_PARAMETER(Interrupt);
-	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
+	UNREFERENCED_PARAMETER((Interrupt, AssociatedObject));
+	//PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 
 	DbgPrint("LumiaUSBC: Got an interrupt from PLUGDET!\n");
 
