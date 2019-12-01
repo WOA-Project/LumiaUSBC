@@ -649,9 +649,21 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	unsigned char value = (unsigned char)0;
 	ULONG input[8], output[6];
 	LARGE_INTEGER delay;
-	LONG i = 0;// , j = 0;
+	LONG i = 0; // , j = 0;
 	PO_FX_DEVICE poFxDevice;
 	PO_FX_COMPONENT_IDLE_STATE idleState;
+
+	UNICODE_STRING		CalibrationFileString;
+	OBJECT_ATTRIBUTES	CalibrationFileObjectAttribute;
+	HANDLE				hCalibrationFile;
+	IO_STATUS_BLOCK		CalibrationIoStatusBlock;
+	UCHAR				CalibrationBlob[UC120_CALIBRATIONFILE_SIZE + 2];
+	LARGE_INTEGER		CalibrationFileByteOffset;
+	FILE_STANDARD_INFORMATION CalibrationFileInfo;
+	// { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0D, 0x7D, 0x32, 0x5F, 0x9E };
+	UCHAR				DefaultCalibrationBlob[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B };
+
+	LONGLONG			CalibrationFileSize;
 
 	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Entry\n");
 
@@ -686,8 +698,68 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		goto Exit;
 	}
 
-	// Initialize the UC120
-	unsigned char initvals[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B }; //{ 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0D, 0x7D, 0x32, 0x5F, 0x9E };
+	// Read calibration file
+	RtlInitUnicodeString(&CalibrationFileString, L"\\DosDevices\\C:\\DPP\\MMO\\ice5lp_2k_cal.bin");
+	InitializeObjectAttributes(&CalibrationFileObjectAttribute, &CalibrationFileString,
+		OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+		NULL, NULL
+	);
+
+	// Should not happen
+	if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
+		status = STATUS_INVALID_DEVICE_STATE;
+		goto Exit;
+	}
+
+	DbgPrint("LumiaUSBC: acquire calibration file handle\n");
+	status = ZwCreateFile(&hCalibrationFile,
+		GENERIC_READ,
+		&CalibrationFileObjectAttribute, 
+		&CalibrationIoStatusBlock, NULL,
+		FILE_ATTRIBUTE_NORMAL,
+		0,
+		FILE_OPEN,
+		FILE_SYNCHRONOUS_IO_NONALERT,
+		NULL, 0
+	);
+
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("LumiaUSBC: failed to open calibration file %x\n", status);
+		goto Exit;
+	}
+
+	DbgPrint("LumiaUSBC: stat calibration file\n");
+	status = ZwQueryInformationFile(
+		hCalibrationFile,
+		&CalibrationIoStatusBlock,
+		&CalibrationFileInfo,
+		sizeof(CalibrationFileInfo),
+		FileStandardInformation
+	);
+	
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("LumiaUSBC: failed to stat calibration file %x\n", status);
+		ZwClose(hCalibrationFile);
+		goto Exit;
+	}
+
+	CalibrationFileSize = CalibrationFileInfo.EndOfFile.QuadPart;
+	DbgPrint("LumiaUSBC: calibration file size %lld\n", CalibrationFileSize);
+
+	DbgPrint("LumiaUSBC: read calibration file\n");
+	RtlZeroMemory(CalibrationBlob, sizeof(CalibrationBlob));
+	CalibrationFileByteOffset.LowPart = 0;
+	CalibrationFileByteOffset.HighPart = 0;
+	status = ZwReadFile(hCalibrationFile, 
+		NULL, NULL, NULL, &CalibrationIoStatusBlock,
+		CalibrationBlob, UC120_CALIBRATIONFILE_SIZE, &CalibrationFileByteOffset, NULL
+	);
+
+	ZwClose(hCalibrationFile);
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("LumiaUSBC: failed to read calibration file %x\n", status);
+		goto Exit;
+	}
 
 	status = UC120_D0Entry(devCtx);
 	if (!NT_SUCCESS(status))
@@ -696,7 +768,21 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		goto Exit;
 	}
 
-	status = UC120_UploadCalibrationData(devCtx, initvals, sizeof(initvals));
+	// Initialize the UC120 accordingly
+	if (CalibrationFileSize == 11) {
+		// Skip the first byte
+		status = UC120_UploadCalibrationData(devCtx, &CalibrationBlob[1], 10);
+	}
+	else if (CalibrationFileSize == 8) {
+		// No skip
+		status = UC120_UploadCalibrationData(devCtx, CalibrationBlob, 8);
+	}
+	else {
+		// Not recognized, use default
+		DbgPrint("LumiaUSBC: Unknown calibration data, fallback to the default\n");
+		status = UC120_UploadCalibrationData(devCtx, DefaultCalibrationBlob, sizeof(DefaultCalibrationBlob));
+	}
+
 	if (!NT_SUCCESS(status))
 	{
 		DbgPrint("LumiaUSBC: UC120_UploadCalibrationData failed %x\n", status);

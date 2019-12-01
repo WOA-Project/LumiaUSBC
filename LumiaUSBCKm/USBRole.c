@@ -43,14 +43,7 @@ NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target
 	SetGPIO(deviceContext, deviceContext->PolGpio, &value);
 
 	// Commented out for safety until we're sure everything is working as expected.
-	//SetGPIO(deviceContext, deviceContext->VbusGpio, &vbus);
-
-	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"WantsToTurnOnVBus",
-		REG_DWORD,
-		&vbus,
-		sizeof(ULONG));
+	SetGPIO(deviceContext, deviceContext->VbusGpio, &vbus);
 
 	connCtx = ConnectorGetContext(deviceContext->Connector);
 
