@@ -29,8 +29,7 @@ void Uc120InterruptWorkItem(
 
 	DbgPrint("LumiaUSBC: Got an interrupt from the UC120!\n");
 
-	//UC120_GetCurrentRegisters(ctx, 2);
-	UC120_GetCurrentState(ctx, 2);
+	UC120_GetCurrentRegisters(ctx, 2);
 	UC120_InterruptHandled(ctx);
 }
 
@@ -45,7 +44,6 @@ void PlugDetInterruptWorkItem(
 	DbgPrint("LumiaUSBC: Got an interrupt from PLUGDET!\n");
 
 	//UC120_GetCurrentRegisters(ctx, 1);
-	//UC120_GetCurrentState(ctx, 1);
 	//UC120_InterruptHandled(ctx);
 }
 
@@ -59,8 +57,7 @@ void Mystery1InterruptWorkItem(
 
 	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 1!\n");
 
-	//UC120_GetCurrentRegisters(ctx, 1);
-	UC120_GetCurrentState(ctx, 3);
+	UC120_GetCurrentRegisters(ctx, 3);
 	UC120_InterruptHandled(ctx);
 }
 
@@ -74,7 +71,6 @@ void Mystery2InterruptWorkItem(
 
 	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 2!\n");
 
-	//UC120_GetCurrentRegisters(ctx, 1);
-	UC120_GetCurrentState(ctx, 4);
+	UC120_GetCurrentRegisters(ctx, 4);
 	UC120_InterruptHandled(ctx);
 }

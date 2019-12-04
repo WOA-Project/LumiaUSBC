@@ -56,6 +56,7 @@
     <ClInclude Include="SPI.h" />
     <ClInclude Include="Trace.h" />
     <ClInclude Include="UC120.h" />
+    <ClInclude Include="UC120Registers.h" />
     <ClInclude Include="USBRole.h" />
     <ClInclude Include="WorkItems.h" />
   </ItemGroup>

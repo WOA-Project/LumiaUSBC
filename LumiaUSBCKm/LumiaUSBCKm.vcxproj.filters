@@ -57,6 +57,9 @@
     <ClInclude Include="USBRole.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UC120Registers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Device.c">

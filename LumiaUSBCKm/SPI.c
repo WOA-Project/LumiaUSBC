@@ -7,7 +7,7 @@
 #define IOCTL_QUP_SPI_ASSERT_CS   CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x1, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_QUP_SPI_DEASSERT_CS CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x0, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
+NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, void* value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, outputDescriptor;
@@ -55,7 +55,7 @@ NTSTATUS ReadRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG 
 	return status;
 }
 
-NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, unsigned char* value, ULONG length)
+NTSTATUS WriteRegister(PDEVICE_CONTEXT ctx, int reg, void* value, ULONG length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_MEMORY_DESCRIPTOR regDescriptor, inputDescriptor;

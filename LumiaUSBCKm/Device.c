@@ -627,7 +627,7 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 		goto Exit;
 	}
 
-	unsigned char value = (unsigned char)1;
+	unsigned char value = (unsigned char)0;
 	SetGPIO(devCtx, devCtx->PolGpio, &value);
 
 	value = (unsigned char)0;
@@ -815,11 +815,10 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		&i,
 		sizeof(ULONG));
 
-	//UC120_GetCurrentRegisters(devCtx, 0);
-	status = UC120_GetCurrentState(devCtx, 0);
+	status = UC120_GetCurrentRegisters(devCtx, 0);
 	if (!NT_SUCCESS(status))
 	{
-		DbgPrint("LumiaUSBC: UC120_GetCurrentState failed %x\n", status);
+		DbgPrint("LumiaUSBC: UC120_GetCurrentRegisters failed %x\n", status);
 		goto Exit;
 	}
 
