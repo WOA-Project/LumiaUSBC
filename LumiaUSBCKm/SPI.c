@@ -140,6 +140,9 @@ NTSTATUS ReadRegisterFullDuplex(
 	ULONG Length
 )
 {
+	if (Value == NULL || Length < 1) {
+		return STATUS_INVALID_PARAMETER;
+	}
 
 	// Params
 	NTSTATUS status = STATUS_SUCCESS;
@@ -192,7 +195,7 @@ NTSTATUS ReadRegisterFullDuplex(
 		Sequence.List.Transfers[++index] = SPB_TRANSFER_LIST_ENTRY_INIT_SIMPLE(
 			SpbTransferDirectionFromDevice,
 			0,
-			(PVOID) &pSpbTransferOutputMemory,
+			(PVOID) pSpbTransferOutputMemory,
 			(ULONG) SpbTransferOutputMemorySize
 		);
 	}
@@ -228,7 +231,7 @@ NTSTATUS ReadRegisterFullDuplex(
 		goto exit;
 	}
 
-	RtlCopyMemory(Value, &pSpbTransferOutputMemory[2], Length);
+	RtlCopyMemory(Value, pSpbTransferOutputMemory + 2, Length);
 	WdfObjectDelete(SpbTransferOutputMemory);
 
 exit:
@@ -243,6 +246,10 @@ NTSTATUS WriteRegisterFullDuplex(
 	ULONG Length
 )
 {
+	if (Value == NULL || Length < 1) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
 	// Params
 	NTSTATUS status = STATUS_SUCCESS;
 	UCHAR command = (UCHAR) ((Register << 3) | 1);
@@ -272,7 +279,7 @@ NTSTATUS WriteRegisterFullDuplex(
 	pSpbTransferInputMemory[0] = command;
 
 	// The rest is content
-	RtlCopyMemory(&pSpbTransferInputMemory[1], Value, Length);
+	RtlCopyMemory(pSpbTransferInputMemory + 1, Value, Length);
 
 	// IOCTL
 	status = WdfIoTargetSendWriteSynchronously(
