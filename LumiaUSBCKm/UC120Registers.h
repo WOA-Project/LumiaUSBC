@@ -15,6 +15,7 @@ EXTERN_C_START
 
 // Control Register 0
 // Write only
+#include <pshpack1.h>
 typedef struct _UC120_REG0
 {
 	union
@@ -264,6 +265,7 @@ typedef struct _UC120_REG13
 		} RegisterContent;
 	};
 } UC120_REG13, * PUC120_REG13;
+#include <poppack.h>
 
 typedef struct _UC120_REGISTERS
 {

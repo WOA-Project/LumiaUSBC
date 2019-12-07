@@ -37,7 +37,7 @@ EVT_WDF_DEVICE_SELF_MANAGED_IO_INIT LumiaUSBCSelfManagedIoInit;
 NTSTATUS LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit);
 
 // Interrupt routines
-BOOLEAN EvtInterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID);
+EVT_WDF_INTERRUPT_ISR EvtInterruptIsr;
 
 NTSTATUS Uc120InterruptEnable(WDFINTERRUPT Interrupt, WDFDEVICE AssociatedDevice);
 NTSTATUS Uc120InterruptDisable(WDFINTERRUPT Interrupt, WDFDEVICE AssociatedDevice);
@@ -214,6 +214,7 @@ LumiaUSBCProbeResources(
 	ULONG resourceCount;
 
 	DbgPrint("LumiaUSBC: LumiaUSBCProbeResources Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> LumiaUSBCProbeResources");
 
 	resourceCount = WdfCmResourceListGetCount(ResourcesTranslated);
 
@@ -300,7 +301,8 @@ LumiaUSBCProbeResources(
 
 	if (!spiFound || gpioFound < 4 || interruptFound < 4)
 	{
-		DbgPrint("LumiaUSBC: Not all resources were found, SPI = %d, GPIO = %d, Interrupts = %d\n", spiFound, gpioFound, interruptFound);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "Not all resources were found");
+		DbgPrint("LumiaUSBC: Not all resources were found \n");
 		status = STATUS_INSUFFICIENT_RESOURCES;
 		goto Exit;
 	}
@@ -312,35 +314,40 @@ LumiaUSBCProbeResources(
 	interruptConfig.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, UC120Interrupt);
 
 	interruptConfig.EvtInterruptWorkItem = Uc120InterruptWorkItem;
-	//interruptConfig.EvtInterruptEnable = Uc120InterruptEnable;
+	// interruptConfig.EvtInterruptEnable = Uc120InterruptEnable;
 	interruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
 
 	status = WdfInterruptCreate(
 		DeviceContext->Device,
 		&interruptConfig,
 		WDF_NO_OBJECT_ATTRIBUTES,
-		&DeviceContext->Uc120Interrupt);
+		&DeviceContext->Uc120Interrupt
+	);
+
 	if (!NT_SUCCESS(status))
 	{
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for UC120 interrupt, %!STATUS!", status);
 		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for UC120 interrupt %x\n", status);
 		goto Exit;
 	}
 
 	WDF_INTERRUPT_CONFIG_INIT(&interruptConfig2, EvtInterruptIsr, NULL);
 
-	//interruptConfig2.PassiveHandling = TRUE;
+	// interruptConfig2.PassiveHandling = TRUE;
 	interruptConfig2.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, PlugDetInterrupt);
 	interruptConfig2.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, PlugDetInterrupt);
-
 	interruptConfig2.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
 
 	status = WdfInterruptCreate(
 		DeviceContext->Device,
 		&interruptConfig2,
 		WDF_NO_OBJECT_ATTRIBUTES,
-		&DeviceContext->PlugDetectInterrupt);
+		&DeviceContext->PlugDetectInterrupt
+	);
+
 	if (!NT_SUCCESS(status))
 	{
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for plug detection, %!STATUS!", status);
 		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for plug detection %x\n", status);
 		goto Exit;
 	}
@@ -350,16 +357,18 @@ LumiaUSBCProbeResources(
 	interruptConfig3.PassiveHandling = TRUE;
 	interruptConfig3.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, MysteryInterrupt1);
 	interruptConfig3.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, MysteryInterrupt1);
-
 	interruptConfig3.EvtInterruptWorkItem = Mystery1InterruptWorkItem;
 
 	status = WdfInterruptCreate(
 		DeviceContext->Device,
 		&interruptConfig3,
 		WDF_NO_OBJECT_ATTRIBUTES,
-		&DeviceContext->MysteryInterrupt1);
+		&DeviceContext->MysteryInterrupt1
+	);
+
 	if (!NT_SUCCESS(status))
 	{
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for mystery 1 (VBUS), %!STATUS!", status);
 		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for mystery 1 %x\n", status);
 		goto Exit;
 	}
@@ -369,21 +378,24 @@ LumiaUSBCProbeResources(
 	interruptConfig4.PassiveHandling = TRUE;
 	interruptConfig4.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, MysteryInterrupt2);
 	interruptConfig4.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, MysteryInterrupt2);
-
 	interruptConfig4.EvtInterruptWorkItem = Mystery2InterruptWorkItem;
 
 	status = WdfInterruptCreate(
 		DeviceContext->Device,
 		&interruptConfig4,
 		WDF_NO_OBJECT_ATTRIBUTES,
-		&DeviceContext->MysteryInterrupt2);
+		&DeviceContext->MysteryInterrupt2
+	);
+
 	if (!NT_SUCCESS(status))
 	{
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for mystery 2, %!STATUS!", status);
 		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for mystery 2 %x\n", status);
 		goto Exit;
 	}
 
 	DbgPrint("LumiaUSBC: LumiaUSBCProbeResources Exit: %x\n", status);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- LumiaUSBCProbeResources");
 
 Exit:
 	return status;
@@ -585,7 +597,8 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_TYPEC_CONFIG_INIT(
 		&typeCConfig,
 		UcmTypeCOperatingModeDrp,
-		UcmTypeCCurrentDefaultUsb);
+		UcmTypeCCurrentDefaultUsb
+	);
 
 	typeCConfig.EvtSetDataRole = LumiaUSBCSetDataRole;
 
