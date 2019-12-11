@@ -158,60 +158,61 @@ NTSTATUS WriteRegisterFullDuplex(
 	ULONG Length
 )
 {
-	if (Value == NULL || Length < 1) {
-		return STATUS_INVALID_PARAMETER;
-	}
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> WriteRegisterFullDuplex");
+	DbgPrint("-> WriteRegisterFullDuplex\n");
 
-	// Params
 	NTSTATUS status = STATUS_SUCCESS;
-	UCHAR command = (UCHAR) ((Register << 3) | 1);
+	UCHAR Command = (unsigned char)((Register << 3) | 1);
 
-	WDFMEMORY SpbTransferInputMemory;
-	WDF_MEMORY_DESCRIPTOR SpbTransferInputMemoryDescriptor;
-	UCHAR* pSpbTransferInputMemory;
+	WDFMEMORY SpbTransferOutputMemory;
+	WDF_MEMORY_DESCRIPTOR SpbTransferOutputMemoryDescriptor;
+	ULONG SpbTransferOutputMemorySize = 1 + Length;
+	UCHAR* pSpbTransferOutputMemory = NULL;
 
-	// Take lock
+	// Take Lock
 	WdfObjectAcquireLock(pContext->Device);
 
+	// Allocate the memory that holds output buffer
 	status = WdfMemoryCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
 		PagedPool,
 		'12CU',
-		Length + 1,
-		&SpbTransferInputMemory,
-		&pSpbTransferInputMemory
+		SpbTransferOutputMemorySize,
+		&SpbTransferOutputMemory,
+		&pSpbTransferOutputMemory
 	);
 
 	if (!NT_SUCCESS(status)) {
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed %!STATUS!", status);
+		DbgPrint("WriteRegisterFullDuplex: WdfMemoryCreate failed 0x%x\n", status);
 		goto exit;
 	}
 
-	// First byte is command
-	pSpbTransferInputMemory[0] = command;
+	RtlZeroMemory(pSpbTransferOutputMemory, SpbTransferOutputMemorySize);
+	RtlCopyMemory(pSpbTransferOutputMemory, &Command, 1);
+	RtlCopyMemory(pSpbTransferOutputMemory + 1, Value, Length);
 
-	// The rest is content
-	RtlCopyMemory(pSpbTransferInputMemory + 1, Value, Length);
+	WDF_MEMORY_DESCRIPTOR_INIT_HANDLE(&SpbTransferOutputMemoryDescriptor, SpbTransferOutputMemory, 0);
 
-	// IOCTL
 	status = WdfIoTargetSendWriteSynchronously(
 		pContext->Spi,
 		NULL,
-		&SpbTransferInputMemoryDescriptor,
-		0,
+		&SpbTransferOutputMemoryDescriptor,
+		NULL,
 		NULL,
 		NULL
 	);
 
 	if (!NT_SUCCESS(status)) {
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfIoTargetSendWriteSynchronously failed %!STATUS!", status);
-		WdfObjectDelete(SpbTransferInputMemory);
+		DbgPrint("ReadRegisterFullDuplex: WdfIoTargetSendWriteSynchronously failed 0x%x\n", status);
+		WdfObjectDelete(SpbTransferOutputMemory);
 		goto exit;
 	}
 
-	WdfObjectDelete(SpbTransferInputMemory);
-
 exit:
 	WdfObjectReleaseLock(pContext->Device);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- WriteRegisterFullDuplex");
+	DbgPrint("<- WriteRegisterFullDuplex\n");
 	return status;
 }
