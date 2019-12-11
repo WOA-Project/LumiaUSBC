@@ -27,9 +27,10 @@ void Uc120InterruptWorkItem(
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the UC120");
 	DbgPrint("LumiaUSBC: Got an interrupt from the UC120!\n");
 
-	UC120_GetCurrentRegisters(ctx, 2);
+	UC120_GetCurrentRegisters(ctx, UC120_NOTIFICATION);
 	UC120_InterruptHandled(ctx);
 }
 
@@ -41,6 +42,7 @@ void PlugDetInterruptWorkItem(
 	UNREFERENCED_PARAMETER((Interrupt, AssociatedObject));
 	//PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the PLUGDET");
 	DbgPrint("LumiaUSBC: Got an interrupt from PLUGDET!\n");
 
 	//UC120_GetCurrentRegisters(ctx, 1);
@@ -55,9 +57,10 @@ void Mystery1InterruptWorkItem(
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the Mystery 1");
 	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 1!\n");
 
-	UC120_GetCurrentRegisters(ctx, 3);
+	UC120_GetCurrentRegisters(ctx, UC120_MYSTERY1_VBUS);
 	UC120_InterruptHandled(ctx);
 }
 
@@ -69,8 +72,9 @@ void Mystery2InterruptWorkItem(
 	UNREFERENCED_PARAMETER(Interrupt);
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the Mystery 2");
 	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 2!\n");
 
-	UC120_GetCurrentRegisters(ctx, 4);
+	UC120_GetCurrentRegisters(ctx, UC120_MYSTERY2_HDMI);
 	UC120_InterruptHandled(ctx);
 }

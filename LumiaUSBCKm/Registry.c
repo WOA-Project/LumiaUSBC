@@ -18,7 +18,7 @@ Environment:
 #include "Registry.tmh"
 
 // I can't believe RtlWriteRegistryValue exists, but not RtlReadRegistryValue...
-NTSTATUS MyReadRegistryValue(PCWSTR registry_path, PCWSTR value_name, ULONG type,
+NTSTATUS LocalReadRegistryValue(PCWSTR registry_path, PCWSTR value_name, ULONG type,
 	PVOID data, ULONG length)
 {
 	UNICODE_STRING valname;

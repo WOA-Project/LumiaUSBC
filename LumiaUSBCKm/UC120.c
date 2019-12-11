@@ -19,6 +19,7 @@ Environment:
 #include "Registry.h"
 #include "USBRole.h"
 #include <wchar.h>
+#include "UC120.h"
 #include "UC120.tmh"
 #include "UC120Registers.h"
 
@@ -124,9 +125,10 @@ Exit:
 
 unsigned long counter = 0;
 
-NTSTATUS UC120_PrintRegisters(UC120_REGISTERS registers, ULONG context)
+NTSTATUS UC120_PrintRegisters(UC120_REGISTERS registers, UC120_CONTEXT_STATES context)
 {
 	PCWSTR contextStr = L"REG";
+
 	if (context == 0)
 	{
 		contextStr = L"INIT";
@@ -156,7 +158,9 @@ NTSTATUS UC120_PrintRegisters(UC120_REGISTERS registers, ULONG context)
 		(PCWSTR)buf,
 		REG_BINARY,
 		&registers,
-		sizeof(UC120_REGISTERS));
+		sizeof(UC120_REGISTERS)
+	);
+
 	if (!NT_SUCCESS(status))
 	{
 		goto Exit;
@@ -167,125 +171,55 @@ Exit:
 	return status;
 }
 
-NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, unsigned int context)
+NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, UC120_CONTEXT_STATES context)
 {
 	NTSTATUS status = STATUS_SUCCESS;
+	UC120_REGISTERS_PARSED registers;
+
+	UNREFERENCED_PARAMETER(context);
 
 	DbgPrint("LumiaUSBC: UC120_GetCurrentRegisters Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> UC120_GetCurrentRegisters");
 
-	UC120_REGISTERS registers;
-	RtlZeroMemory(&registers, sizeof(UC120_REGISTERS));
+	RtlZeroMemory(&registers, sizeof(UC120_REGISTERS_PARSED));
 
-	status = UC120_ReadRegisters(deviceContext, &registers);
+	// Read register 2
+	status = ReadRegister(deviceContext, 2, &registers.Register2, 1);
 	if (!NT_SUCCESS(status))
 	{
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "ReadRegister failed with %!STATUS!", status);
 		goto Exit;
 	}
 
-	status = UC120_PrintRegisters(registers, context);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_BEHAVIOR, "Reg2: 0x%x, ChargerBit1: %d, DongleBit: %d, ChargerBit2: %d",
+		registers.Register2.RegisterData,
+		registers.Register2.RegisterContent.Charger1,
+		registers.Register2.RegisterContent.Dongle,
+		registers.Register2.RegisterContent.Charger2
+	);
+
+	// Read register 7
+	status = ReadRegister(deviceContext, 7, &registers.Register7, 1);
 	if (!NT_SUCCESS(status))
 	{
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "ReadRegister failed with %!STATUS!", status);
 		goto Exit;
 	}
 
-	unsigned int side = 1;
-	UCM_TYPEC_PARTNER mode = UcmTypeCPartnerInvalid;
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_BEHAVIOR, "Reg7: 0x%x, SkipPD: %d, CableType: %d, Polarity: %d",
+		registers.Register7.RegisterData,
+		registers.Register7.RegisterContent.SkipPDNegotiation,
+		registers.Register7.RegisterContent.CableType,
+		registers.Register7.RegisterContent.Polarity
+	);
 
-	// Detect the side by measuring which CC value is the highest
-	side = registers.Register9 > registers.Register10;
+	// Read register 5
+	status = ReadRegister(deviceContext, 5, &registers.Register5, 1);
 
-	// Nothing is connected
-	if ((unsigned int)registers.Register9 == 0u && (unsigned int)registers.Register10 == 0u)
-	{
-		DbgPrint("LumiaUSBC: Connector is empty!\n");
-
-		status = USBC_ChangeRole(deviceContext, mode, side);
-		goto Exit;
-	}
-
-	DbgPrint("LumiaUSBC: DetectedSide=%x\n", side);
-
-	UC120_REG5 reg5 = { 0 };
-	reg5.RegisterData = registers.Register5;
-
-	// We connected a dongle, turn on VBUS
-	if (reg5.RegisterContent.PowerRole)
-	{
-		// HOST + VBUS
-		mode = UcmTypeCPartnerUfp;
-		DbgPrint("LumiaUSBC: VBus will be turned on\n");
-	}
-	else
-	{
-		// VBUS off
-		mode = UcmTypeCPartnerPoweredCableWithUfp;
-	}
-
-	DbgPrint("LumiaUSBC: CurrentState=%x\n", mode);
-
-	status = USBC_ChangeRole(deviceContext, mode, side);
-
-	unsigned int newPowerRole = reg5.RegisterContent.PowerRole;
-	unsigned int newDataRole = reg5.RegisterContent.DataRole;
-	unsigned int vconnRoleSwitch = reg5.RegisterContent.VconnRole;
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"NewPowerRole",
-		REG_DWORD,
-		&newPowerRole,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"NewDataRole",
-		REG_DWORD,
-		&newDataRole,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"VconnRoleSwitch",
-		REG_DWORD,
-		&vconnRoleSwitch,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"Side",
-		REG_DWORD,
-		&side,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
-	status = RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		L"RoleMode",
-		REG_DWORD,
-		&mode,
-		sizeof(ULONG));
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-
+	
 Exit:
 	DbgPrint("LumiaUSBC: UC120_GetCurrentRegisters Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- UC120_GetCurrentRegisters");
 	return status;
 }
 
@@ -387,57 +321,73 @@ Exit:
 NTSTATUS UC120_D0Entry(PDEVICE_CONTEXT deviceContext)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-
-	UC120_REG4 register4;
-	UC120_REG5 register5;
-	UC120_REG13 register13;
+	UCHAR Val = 0;
 
 	DbgPrint("LumiaUSBC: UC120_D0Entry Entry\n");
 
-	RtlZeroMemory(&register4, sizeof(UC120_REG4));
-	RtlZeroMemory(&register5, sizeof(UC120_REG5));
-	RtlZeroMemory(&register13, sizeof(UC120_REG13));
-
-	status = ReadRegister(deviceContext, 4, &register4, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-	register4.RegisterContent.EnableInterrupts = 1;
-	register4.RegisterContent.Reserved0 |= 1; // turn on bit 1
-	status = WriteRegister(deviceContext, 4, &register4, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
+	// Write as is
+	Val = 0x6;
+	status = WriteRegister(deviceContext, 4, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WriteRegister failed with %!STATUS!", status);
+		goto exit;
 	}
 
-	status = ReadRegister(deviceContext, 5, &register5, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-	register5.RegisterContent.D0Enterred = 1;
-	register5.RegisterContent.D0EnterredAndInterruptsYetToBeEnabled = 1;
-	status = WriteRegister(deviceContext, 5, &register5, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
+	Val = 0x88;
+	status = WriteRegister(deviceContext, 5, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WriteRegister failed with %!STATUS!", status);
+		goto exit;
 	}
 
-	status = ReadRegister(deviceContext, 13, &register13, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
-	}
-	register13.RegisterContent.D0Enterred = 1;
-	register13.RegisterContent.D0NotEnterred = 0;
-	status = WriteRegister(deviceContext, 13, &register13, 1);
-	if (!NT_SUCCESS(status))
-	{
-		goto Exit;
+	Val = 0x2;
+	status = WriteRegister(deviceContext, 13, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WriteRegister failed with %!STATUS!", status);
+		goto exit;
 	}
 
-Exit:
+	Val = 0xff;
+	status = WriteRegister(deviceContext, 2, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WriteRegister failed with %!STATUS!", status);
+		goto exit;
+	}
+
+	Val = 0xff;
+	status = WriteRegister(deviceContext, 3, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WriteRegister failed with %!STATUS!", status);
+		goto exit;
+	}
+
+	Val = 0x7;
+	status = WriteRegister(deviceContext, 4, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WriteRegister failed with %!STATUS!", status);
+		goto exit;
+	}
+
+	Val = 0x8;
+	status = WriteRegister(deviceContext, 5, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WriteRegister failed with %!STATUS!", status);
+		goto exit;
+	}
+
+	status = ReadRegister(deviceContext, 2, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "ReadRegister failed with %!STATUS!", status);
+		goto exit;
+	}
+
+	status = ReadRegister(deviceContext, 7, &Val, 1);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "ReadRegister failed with %!STATUS!", status);
+		goto exit;
+	}
+
+exit:
 	DbgPrint("LumiaUSBC: UC120_D0Entry Exit\n");
 	return status;
 }
@@ -445,6 +395,7 @@ Exit:
 NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned char* calibrationFile, unsigned int length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
+#if 0
 	DbgPrint("LumiaUSBC: UC120_UploadCalibrationData Entry\n");
 
 	switch (length)
@@ -554,7 +505,13 @@ NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned cha
 	}
 	}
 
-Exit:
+exit:
+#else
+	UNREFERENCED_PARAMETER(deviceContext);
+	UNREFERENCED_PARAMETER(calibrationFile);
+	UNREFERENCED_PARAMETER(length);
+#endif
+
 	DbgPrint("LumiaUSBC: UC120_UploadCalibrationData Exit\n");
 	return status;
 }

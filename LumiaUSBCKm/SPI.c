@@ -4,115 +4,6 @@
 
 #include <spb.h>
 
-#ifdef LEGACY_SPI_WRITE
-
-#define IOCTL_QUP_SPI_CS_MANIPULATION 0x610
-
-#define IOCTL_QUP_SPI_AUTO_CS     CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x2, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUP_SPI_ASSERT_CS   CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x1, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_QUP_SPI_DEASSERT_CS CTL_CODE(FILE_DEVICE_CONTROLLER, IOCTL_QUP_SPI_CS_MANIPULATION | 0x0, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-NTSTATUS ReadRegister(
-	PDEVICE_CONTEXT ctx, 
-	int reg, 
-	void* value, 
-	ULONG length
-)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	WDF_MEMORY_DESCRIPTOR regDescriptor, outputDescriptor;
-	unsigned char command = (unsigned char)(reg << 3);
-
-	WdfObjectAcquireLock(ctx->Device);
-
-	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_ASSERT_CS, NULL, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
-	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &regDescriptor, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, value, length);
-
-	// need to read 3 times to get the correct value, for some reason
-	// NOTE: original driver does a full-duplex transfer here, where the 1st byte starts reading *before*
-	// the register ID is written, so possibly we will need 2 here instead!
-	for (int i = 0; i < 2; i++) {
-		status = WdfIoTargetSendReadSynchronously(ctx->Spi, NULL, &outputDescriptor, NULL, NULL, NULL);
-
-		if (!NT_SUCCESS(status))
-		{
-			WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-			WdfObjectReleaseLock(ctx->Device);
-			return status;
-		}
-	}
-
-	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-
-	WdfObjectReleaseLock(ctx->Device);
-
-	return status;
-}
-
-NTSTATUS WriteRegister(
-	PDEVICE_CONTEXT ctx, 
-	int reg, 
-	void* value, 
-	ULONG length
-)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	WDF_MEMORY_DESCRIPTOR regDescriptor, inputDescriptor;
-	unsigned char command = (unsigned char)((reg << 3) | 1);
-
-	WdfObjectAcquireLock(ctx->Device);
-
-	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_ASSERT_CS, NULL, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&regDescriptor, &command, 1);
-	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &regDescriptor, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, value, length);
-	status = WdfIoTargetSendWriteSynchronously(ctx->Spi, NULL, &inputDescriptor, NULL, NULL, NULL);
-	if (!NT_SUCCESS(status))
-	{
-		WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-		WdfObjectReleaseLock(ctx->Device);
-		return status;
-	}
-
-	status = WdfIoTargetSendIoctlSynchronously(ctx->Spi, NULL, IOCTL_QUP_SPI_AUTO_CS, NULL, NULL, NULL, NULL);
-
-	WdfObjectReleaseLock(ctx->Device);
-
-	return status;
-}
-
-#else
-
 NTSTATUS ReadRegister(
 	PDEVICE_CONTEXT pContext,
 	int Register,
@@ -140,9 +31,8 @@ NTSTATUS ReadRegisterFullDuplex(
 	ULONG Length
 )
 {
-	if (Value == NULL || Length < 1) {
-		return STATUS_INVALID_PARAMETER;
-	}
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> ReadRegisterFullDuplex");
+	DbgPrint("-> ReadRegisterFullDuplex\n");
 
 	// Params
 	NTSTATUS status = STATUS_SUCCESS;
@@ -152,7 +42,10 @@ NTSTATUS ReadRegisterFullDuplex(
 	ULONG SpbTransferOutputMemorySize = 2 + Length;
 	UCHAR* pSpbTransferOutputMemory = NULL;
 
-	WDFMEMORY SpbTransferListMemory;
+	WDFMEMORY SpbTransferInputMemory;
+	ULONG SpbTransferInputMemorySize = 1;
+	UCHAR* pSpbTransferInputMemory = NULL;
+
 	WDF_MEMORY_DESCRIPTOR SpbTransferListMemoryDescriptor;
 
 	// One register write and read
@@ -165,17 +58,37 @@ NTSTATUS ReadRegisterFullDuplex(
 	// Allocate the memory that holds output buffer
 	status = WdfMemoryCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
-		NonPagedPoolNx,
+		PagedPool,
 		'12CU',
-		SpbTransferOutputMemorySize,
-		&SpbTransferOutputMemory,
-		(PVOID) pSpbTransferOutputMemory
+		SpbTransferInputMemorySize,
+		&SpbTransferInputMemory,
+		&pSpbTransferInputMemory
 	);
 
 	if (!NT_SUCCESS(status)) {
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed %!STATUS!", status);
+		DbgPrint("ReadRegisterFullDuplex: WdfMemoryCreate failed 0x%x\n", status);
 		goto exit;
 	}
+
+	// Allocate the memory that holds output buffer
+	status = WdfMemoryCreate(
+		WDF_NO_OBJECT_ATTRIBUTES,
+		PagedPool,
+		'12CU',
+		SpbTransferOutputMemorySize,
+		&SpbTransferOutputMemory,
+		&pSpbTransferOutputMemory
+	);
+
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed %!STATUS!", status);
+		DbgPrint("ReadRegisterFullDuplex: WdfMemoryCreate failed 0x%x\n", status);
+		WdfObjectDelete(SpbTransferInputMemory);
+		goto exit;
+	}
+
+	RtlCopyMemory(pSpbTransferInputMemory, &command, 1);
 
 	{
 		//
@@ -184,36 +97,26 @@ NTSTATUS ReadRegisterFullDuplex(
 		// the warning. This is a false positive from OACR.
 		// 
 
-		ULONG index = 0;
-		Sequence.List.Transfers[index] = SPB_TRANSFER_LIST_ENTRY_INIT_SIMPLE(
+		Sequence.List.Transfers[0] = SPB_TRANSFER_LIST_ENTRY_INIT_SIMPLE(
 			SpbTransferDirectionToDevice,
 			0,
-			(PVOID) &command,
-			(ULONG) 1
+			pSpbTransferInputMemory,
+			(ULONG)SpbTransferInputMemorySize
 		);
 
-		Sequence.List.Transfers[++index] = SPB_TRANSFER_LIST_ENTRY_INIT_SIMPLE(
+		Sequence.List.Transfers[1] = SPB_TRANSFER_LIST_ENTRY_INIT_SIMPLE(
 			SpbTransferDirectionFromDevice,
 			0,
-			(PVOID) pSpbTransferOutputMemory,
+			pSpbTransferOutputMemory,
 			(ULONG) SpbTransferOutputMemorySize
 		);
 	}
 
-	status = WdfMemoryCreatePreallocated(
-		WDF_NO_OBJECT_ATTRIBUTES,
-		(PVOID)&Sequence,
-		sizeof(Sequence),
-		&SpbTransferListMemory
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
+		&SpbTransferListMemoryDescriptor,
+		(PVOID) &Sequence,
+		sizeof(Sequence)
 	);
-
-	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreatePreallocated failed %!STATUS!", status);
-		WdfObjectDelete(SpbTransferOutputMemory);
-		goto exit;
-	}
-
-	WDF_MEMORY_DESCRIPTOR_INIT_HANDLE(&SpbTransferListMemoryDescriptor, SpbTransferListMemory, 0);
 
 	status = WdfIoTargetSendIoctlSynchronously(
 		pContext->Spi,
@@ -227,15 +130,24 @@ NTSTATUS ReadRegisterFullDuplex(
 
 	if (!NT_SUCCESS(status)) {
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfIoTargetSendIoctlSynchronously failed %!STATUS!", status);
+		DbgPrint("ReadRegisterFullDuplex: WdfIoTargetSendIoctlSynchronously failed 0x%x\n", status);
+		WdfObjectDelete(SpbTransferInputMemory);
 		WdfObjectDelete(SpbTransferOutputMemory);
 		goto exit;
 	}
 
 	RtlCopyMemory(Value, pSpbTransferOutputMemory + 2, Length);
+	WdfObjectDelete(SpbTransferInputMemory);
 	WdfObjectDelete(SpbTransferOutputMemory);
+
+	if (Length == 1) {
+		DbgPrint("ReadRegisterFullDuplex: register 0x%x value 0x%x\n", Register, (UCHAR) *((UCHAR*) Value));
+	}
 
 exit:
 	WdfObjectReleaseLock(pContext->Device);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- ReadRegisterFullDuplex");
+	DbgPrint("<- ReadRegisterFullDuplex\n");
 	return status;
 }
 
@@ -263,11 +175,11 @@ NTSTATUS WriteRegisterFullDuplex(
 
 	status = WdfMemoryCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
-		NonPagedPoolNx,
+		PagedPool,
 		'12CU',
 		Length + 1,
 		&SpbTransferInputMemory,
-		(PVOID)&pSpbTransferInputMemory
+		&pSpbTransferInputMemory
 	);
 
 	if (!NT_SUCCESS(status)) {
@@ -303,5 +215,3 @@ exit:
 	WdfObjectReleaseLock(pContext->Device);
 	return status;
 }
-
-#endif

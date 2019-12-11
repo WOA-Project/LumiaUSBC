@@ -23,7 +23,6 @@ Environment:
 NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target, unsigned int side)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	unsigned char data = 0;
 	unsigned char vbus = 0;
 	PCONNECTOR_CONTEXT connCtx;
 
@@ -72,16 +71,7 @@ NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target
 			UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
 
 			Pdos[0].FixedSupplyPdo.VoltageIn50mV = 100;         // 5V
-			Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 50;  // 500 mA - can be overridden in Registry
-			if (NT_SUCCESS(MyReadRegistryValue(
-				(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-				(PCWSTR)L"ChargeCurrent",
-				REG_DWORD,
-				&data,
-				sizeof(ULONG))))
-			{
-				Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = data / 10;
-			}
+			Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 300;  // 3000 mA - can be overridden in Registry
 			status = UcmConnectorPdPartnerSourceCaps(deviceContext->Connector, Pdos, 1);
 			UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
 			UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);

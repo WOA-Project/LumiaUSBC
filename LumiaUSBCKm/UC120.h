@@ -1,6 +1,6 @@
 EXTERN_C_START
 
-NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, unsigned int context);
+NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, UC120_CONTEXT_STATES context);
 NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext);
 NTSTATUS UC120_InterruptsEnable(PDEVICE_CONTEXT deviceContext);
 NTSTATUS UC120_InterruptsDisable(PDEVICE_CONTEXT deviceContext);

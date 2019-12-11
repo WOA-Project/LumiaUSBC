@@ -69,13 +69,11 @@ typedef struct _UC120_REG2
 		struct
 		{
 			unsigned int Reserved0 : 1;
-			unsigned int BISTCarrierMode2 : 1; // Entered BIST Carrier Mode 2
-			unsigned int BISTTestDataMode : 1; // Entered BIST Test Data Mode
-			unsigned int BillboardMode : 1;
-			unsigned int AltMode : 1;          // 0 = USB mode - 1 = Alt mode
-			unsigned int ValidPDContract : 1;  // 0 = No valid PD contract - 1 = Valid PD contract exists
-			unsigned int DROLE : 1;            // 0 = UFP - 1 = DFP (Present Data Role)
-			unsigned int PROLE : 1;            // 0 = Sink - 1 = Source (Present Port Role)
+			unsigned int Reserved1 : 1;
+			unsigned int Charger1 : 1;
+			unsigned int Dongle : 1;
+			unsigned int Charger2 : 1;
+			unsigned int Reserved3 : 3;
 		} RegisterContent;
 	};
 } UC120_REG2, * PUC120_REG2;
@@ -174,19 +172,11 @@ typedef struct _UC120_REG7
 		BYTE RegisterData; // Read on interrupt enable
 		struct
 		{
-			unsigned int VDMModesReceived : 1;     // Used when operating as a DFP.EC should read the VDM modes register to decide upon the supported modes for a
-											       // specific SVID. If no mode matches, then EC should set VDM Enter Bill Board mode bit in Control Register 1, else
-											       // load the VDM register and set VDM Enter Mode bit in Control register 0.
-			unsigned int VDMAttentionReceived : 1; // Used when operating as a DFP. EC should read the status register once this interrupt has been generated to know
-												   // the status of the attached UFP.
-			unsigned int ALTModeExitReq : 1;
-			unsigned int BillboardModeEntered : 1; // Will be set on the event of a Display port SID mismatch or the DP sink responded with a NACK for Enter mode
-												   // command. Cleared on a write to this register by EC.
-			unsigned int AltModeEntered : 1;	   // Will be set once the Display port alternate mode has been entered successfully. Cleared on a write to this register by EC.
-			unsigned int BISTModeEntered : 1;      // Will be set once the device enters into BIST mode. Cleared on a write to this register by EC.
-			unsigned int HardResetReceived : 1;    // Will be set once the device receives a hard reset. Cleared on a write to this register by EC.
-			unsigned int SwapStatusUpdated : 1;    // Will be set once the ACCEPT/WAIT/REJECT message was received for the corresponding SWAP request made.
-												   // Read the status register 1 to know the swap result.Cleared on a write to this register by EC.
+			unsigned int Reserved0 : 4;
+			unsigned int SkipPDNegotiation : 1;
+			unsigned int CableType : 1;
+			unsigned int Polarity : 1;
+			unsigned int Reserved1 : 1;
 		} RegisterContent;
 	};
 } UC120_REG7, * PUC120_REG7;
