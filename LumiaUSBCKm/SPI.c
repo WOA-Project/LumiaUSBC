@@ -58,7 +58,7 @@ NTSTATUS ReadRegisterFullDuplex(
 	// Allocate the memory that holds output buffer
 	status = WdfMemoryCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
-		PagedPool,
+		NonPagedPoolNx,
 		'12CU',
 		SpbTransferInputMemorySize,
 		&SpbTransferInputMemory,
@@ -74,7 +74,7 @@ NTSTATUS ReadRegisterFullDuplex(
 	// Allocate the memory that holds output buffer
 	status = WdfMemoryCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
-		PagedPool,
+		NonPagedPoolNx,
 		'12CU',
 		SpbTransferOutputMemorySize,
 		&SpbTransferOutputMemory,
@@ -97,14 +97,14 @@ NTSTATUS ReadRegisterFullDuplex(
 		// the warning. This is a false positive from OACR.
 		// 
 
-		Sequence.List.Transfers[0] = SPB_TRANSFER_LIST_ENTRY_INIT_SIMPLE(
+		Sequence.List.Transfers[0] = SPB_TRANSFER_LIST_ENTRY_INIT_NON_PAGED(
 			SpbTransferDirectionToDevice,
 			0,
 			pSpbTransferInputMemory,
 			(ULONG)SpbTransferInputMemorySize
 		);
 
-		Sequence.List.Transfers[1] = SPB_TRANSFER_LIST_ENTRY_INIT_SIMPLE(
+		Sequence.List.Transfers[1] = SPB_TRANSFER_LIST_ENTRY_INIT_NON_PAGED(
 			SpbTransferDirectionFromDevice,
 			0,
 			pSpbTransferOutputMemory,
@@ -175,7 +175,7 @@ NTSTATUS WriteRegisterFullDuplex(
 	// Allocate the memory that holds output buffer
 	status = WdfMemoryCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
-		PagedPool,
+		NonPagedPoolNx,
 		'12CU',
 		SpbTransferOutputMemorySize,
 		&SpbTransferOutputMemory,
