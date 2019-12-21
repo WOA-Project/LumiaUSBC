@@ -1,23 +1,8 @@
 EXTERN_C_START
 
-void Uc120InterruptWorkItem(
-	WDFINTERRUPT Interrupt,
-	WDFOBJECT AssociatedObject
-);
-
-void PlugDetInterruptWorkItem(
-	WDFINTERRUPT Interrupt,
-	WDFOBJECT AssociatedObject
-);
-
-void Mystery1InterruptWorkItem(
-	WDFINTERRUPT Interrupt,
-	WDFOBJECT AssociatedObject
-);
-
-void Mystery2InterruptWorkItem(
-	WDFINTERRUPT Interrupt,
-	WDFOBJECT AssociatedObject
-);
+EVT_WDF_INTERRUPT_WORKITEM Uc120InterruptWorkItem;
+EVT_WDF_INTERRUPT_WORKITEM PlugDetInterruptWorkItem;
+EVT_WDF_INTERRUPT_WORKITEM Mystery1InterruptWorkItem;
+EVT_WDF_INTERRUPT_WORKITEM Mystery2InterruptWorkItem;
 
 EXTERN_C_END

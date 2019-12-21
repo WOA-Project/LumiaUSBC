@@ -315,7 +315,7 @@ LumiaUSBCProbeResources(
 
 	interruptConfig.EvtInterruptWorkItem = Uc120InterruptWorkItem;
 	// interruptConfig.EvtInterruptEnable = Uc120InterruptEnable;
-	interruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
+	// interruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
 
 	status = WdfInterruptCreate(
 		DeviceContext->Device,
@@ -333,7 +333,7 @@ LumiaUSBCProbeResources(
 
 	WDF_INTERRUPT_CONFIG_INIT(&interruptConfig2, EvtInterruptIsr, NULL);
 
-	// interruptConfig2.PassiveHandling = TRUE;
+	interruptConfig2.PassiveHandling = TRUE;
 	interruptConfig2.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, PlugDetInterrupt);
 	interruptConfig2.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, PlugDetInterrupt);
 	interruptConfig2.EvtInterruptWorkItem = PlugDetInterruptWorkItem;
@@ -659,10 +659,9 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	unsigned char value = (unsigned char)0;
 	ULONG input[8], output[6];
 	LARGE_INTEGER delay;
-	LONG i = 0; // , j = 0;
+
 	PO_FX_DEVICE poFxDevice;
 	PO_FX_COMPONENT_IDLE_STATE idleState;
 
@@ -802,45 +801,8 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		goto Exit;
 	}
 
-	value = 0;
-
-	delay.QuadPart = -1000000;
+	delay.QuadPart = -2000000;
 	KeDelayExecutionThread(UserMode, TRUE, &delay);
-	delay.QuadPart = -100000;
-	do {
-		if (!NT_SUCCESS(ReadRegister(devCtx, 5, &value, 1)))
-			DbgPrint("LumiaUSBC: Failed to read register #5 in the init waiting loop!\n");
-		KeDelayExecutionThread(UserMode, TRUE, &delay);
-		i++;
-		if (i > 500) {
-			break;
-		}
-	} while (value == 0);
-
-	DbgPrint("LumiaUSBC: UC120 initialized after %d iterations with value of %x\n", i, value);
-
-	i |= value << 16;
-
-	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
-		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-		(PCWSTR)L"startdelay",
-		REG_DWORD,
-		&i,
-		sizeof(ULONG));
-
-	status = UC120_GetCurrentRegisters(devCtx, 0);
-	if (!NT_SUCCESS(status))
-	{
-		DbgPrint("LumiaUSBC: UC120_GetCurrentRegisters failed %x\n", status);
-		goto Exit;
-	}
-
-	status = UC120_InterruptsEnable(devCtx);
-	if (!NT_SUCCESS(status))
-	{
-		DbgPrint("LumiaUSBC: UC120_InterruptsEnable failed %x\n", status);
-		goto Exit;
-	}
 
 Exit:
 	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Exit\n");
