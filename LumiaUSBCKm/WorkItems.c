@@ -19,6 +19,7 @@ Environment:
 #include "UC120.h"
 #include "WorkItems.tmh"
 #include "UC120Registers.h"
+#include "USBRole.h"
 
 void Uc120InterruptWorkItem(
 	WDFINTERRUPT Interrupt,
@@ -26,28 +27,29 @@ void Uc120InterruptWorkItem(
 )
 {
 	UNREFERENCED_PARAMETER(Interrupt);
-	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
+	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject); 
+	NTSTATUS Status;
 
 	UC120_REG2 Reg2;
 	UC120_REG7 Reg7;
 	UCHAR Buf;
-	NTSTATUS Status;
+	UCM_TYPEC_PARTNER UcmPartnerType = UcmTypeCPartnerInvalid;
 
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the UC120");
 	DbgPrint("LumiaUSBC: Got an interrupt from the UC120!\n");
 
 	// Read register 2
-	Status = ReadRegister(ctx, 2, &Reg2, sizeof(Reg2));
+	Status = ReadRegister(ctx, 2, &Reg2, 1);
 	if (!NT_SUCCESS(Status)) {
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to read register 2: %!STATUS!", Status);
 		goto exit;
 	}
 
-	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg2: 0x%x; Charger1 = %d, Charger2 = %d, Dongle = %d", 
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg2: 0x%x; Charger1 = %d, Charger2 = %d, Dongle = %d",
 		Reg2.RegisterData, Reg2.RegisterContent.Charger1, Reg2.RegisterContent.Charger2, Reg2.RegisterContent.Dongle);
 
 	// Read register 7
-	Status = ReadRegister(ctx, 7, &Reg7, sizeof(Reg7));
+	Status = ReadRegister(ctx, 7, &Reg7, 1);
 	if (!NT_SUCCESS(Status)) {
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to read register 7: %!STATUS!", Status);
 		goto exit;
@@ -57,46 +59,71 @@ void Uc120InterruptWorkItem(
 		Reg7.RegisterData, Reg7.RegisterContent.CableType, Reg7.RegisterContent.Polarity, Reg7.RegisterContent.SkipPDNegotiation);
 
 	if (Reg2.RegisterContent.Dongle) {
-		Status = ReadRegister(ctx, 5, &Buf, sizeof(Buf));
+		Status = ReadRegister(ctx, 5, &Buf, 1);
 		if (!NT_SUCCESS(Status)) {
 			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to read register 5: %!STATUS!", Status);
 			goto exit;
 		}
+
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg5: Read 0x%x", Buf);
 
 		if (Buf == 0x9) {
 			Buf = 0x29;
 		}
 
-		Status = WriteRegister(ctx, 5, &Buf, sizeof(Buf));
+		Status = WriteRegister(ctx, 5, &Buf, 1);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg5: Write 0x%x", Buf);
 		if (!NT_SUCCESS(Status)) {
 			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to write register 5: %!STATUS!", Status);
 			goto exit;
 		}
 
-		Status = ReadRegister(ctx, 5, &Buf, sizeof(Buf));
+		Status = ReadRegister(ctx, 5, &Buf, 1);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg5: Read 0x%x", Buf);
 		if (!NT_SUCCESS(Status)) {
 			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to read register 5: %!STATUS!", Status);
 			goto exit;
 		}
 
-		Status = WriteRegister(ctx, 5, &Buf, sizeof(Buf));
+		Status = WriteRegister(ctx, 5, &Buf, 1);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg5: Write 0x%x", Buf);
 		if (!NT_SUCCESS(Status)) {
 			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to write register 5: %!STATUS!", Status);
 			goto exit;
 		}
 	}
 
-	if (Reg2.RegisterContent.Charger1 || Reg2.RegisterContent.Charger2) {
-		Buf = 5;
-		Status = WriteRegister(ctx, 4, &Buf, sizeof(Buf));
-		if (!NT_SUCCESS(Status)) {
-			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to write register 4: %!STATUS!", Status);
-			goto exit;
-		}
+	Buf = 5;
+	Status = WriteRegister(ctx, 4, &Buf, 1);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg4: Write 0x%x", Buf);
+	if (!NT_SUCCESS(Status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to write register 4: %!STATUS!", Status);
+		goto exit;
+	}
+
+	// Handle changes now
+	if ((Reg2.RegisterContent.Charger1 || Reg2.RegisterContent.Charger2) && Reg2.RegisterContent.Dongle) {
+		UcmPartnerType = UcmTypeCPartnerPoweredCableWithUfp;
+	}
+	else if (Reg2.RegisterContent.Charger1 || Reg2.RegisterContent.Charger2) {
+		UcmPartnerType = UcmTypeCPartnerPoweredCableNoUfp;
+	}
+	else if (Reg2.RegisterContent.Dongle) {
+		UcmPartnerType = UcmTypeCPartnerUfp;
+	}
+
+	Status = USBC_ChangeRole(ctx, UcmPartnerType, Reg7.RegisterContent.Polarity);
+	if (!NT_SUCCESS(Status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to set USB Role: %!STATUS!", Status);
+		goto exit;
 	}
 
 exit:
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "UC120 interrupt acknowledged");
 	UC120_InterruptHandled(ctx);
+
+	// Set the flag finally
+	ctx->Connected = TRUE;
 }
 
 void PlugDetInterruptWorkItem(
@@ -104,14 +131,42 @@ void PlugDetInterruptWorkItem(
 	WDFOBJECT AssociatedObject
 )
 {
-	UNREFERENCED_PARAMETER((Interrupt, AssociatedObject));
-	// PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
+	UNREFERENCED_PARAMETER(Interrupt);
+	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
+	NTSTATUS status;
+	UCHAR Buf = 0;
 
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the PLUGDET");
 	DbgPrint("LumiaUSBC: Got an interrupt from PLUGDET!\n");
 
-	// UC120_GetCurrentRegisters(ctx, 1);
-	// UC120_InterruptHandled(ctx);
+	if (ctx->Connected) {
+		// Reset the connector
+		status = USBC_Detach(ctx);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_WARNING, TRACE_INTERRUPT, "Failed to reset connector. Ignore anyway");
+		}
+		// Read register 5
+		status = ReadRegister(ctx, 5, &Buf, 1);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg5: Read 0x%x", Buf);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to read register 5: %!STATUS!", status);
+		}
+		// Write two registers
+		Buf = 0x8;
+		status = WriteRegister(ctx, 5, &Buf, 1);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to write register 5: %!STATUS!", status);
+		}
+
+		Buf = 0x7;
+		status = WriteRegister(ctx, 4, &Buf, 1);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to write register 4: %!STATUS!", status);
+		}
+
+		// Set flag
+		ctx->Connected = FALSE;
+	}
 }
 
 void Mystery1InterruptWorkItem(
@@ -128,7 +183,7 @@ void Mystery1InterruptWorkItem(
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the Mystery 1");
 	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 1! R5 48 responded\n");
 
-	Status = WriteRegister(ctx, 5, &Unk, sizeof(Unk));
+	Status = WriteRegister(ctx, 5, &Unk, 1);
 	if (!NT_SUCCESS(Status)) {
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "Failed to write register 5: %!STATUS!", Status);
 	}

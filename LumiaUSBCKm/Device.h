@@ -44,6 +44,7 @@ typedef struct _DEVICE_CONTEXT
 	WDFINTERRUPT Uc120Interrupt;
 	WDFINTERRUPT MysteryInterrupt1;
 	WDFINTERRUPT MysteryInterrupt2;
+	BOOLEAN Connected;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
 typedef struct _CONNECTOR_CONTEXT

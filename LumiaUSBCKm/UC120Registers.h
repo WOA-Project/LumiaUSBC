@@ -10,9 +10,6 @@ EXTERN_C_START
 // Ignore warning C4201: nonstandard extension used : bit field types other than in
 #pragma warning (disable : 4214)
 
-// Ignore warning C4324: 'xxx' : structure was padded due to __declspec(align())
-#pragma warning (disable : 4324)
-
 // Control Register 0
 // Write only
 #include <pshpack1.h>
@@ -60,7 +57,6 @@ typedef struct _UC120_REG1
 // Read only
 
 // This register reflects the status of the PD manager.
-
 typedef struct _UC120_REG2
 {
 	union

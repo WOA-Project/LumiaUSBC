@@ -312,8 +312,8 @@ LumiaUSBCProbeResources(
 	interruptConfig.PassiveHandling = TRUE;
 	interruptConfig.InterruptTranslated = WdfCmResourceListGetDescriptor(ResourcesTranslated, UC120Interrupt);
 	interruptConfig.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, UC120Interrupt);
-
 	interruptConfig.EvtInterruptWorkItem = Uc120InterruptWorkItem;
+
 	// interruptConfig.EvtInterruptEnable = Uc120InterruptEnable;
 	// interruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
 
@@ -593,11 +593,10 @@ LumiaUSBCDevicePrepareHardware(
 	// Create a USB Type-C connector #0 with PD
 	//
 	UCM_CONNECTOR_CONFIG_INIT(&connCfg, 0);
-
 	UCM_CONNECTOR_TYPEC_CONFIG_INIT(
 		&typeCConfig,
 		UcmTypeCOperatingModeDrp,
-		UcmTypeCCurrentDefaultUsb
+		UcmTypeCCurrent3000mA | UcmTypeCCurrent1500mA | UcmTypeCCurrentDefaultUsb
 	);
 
 	typeCConfig.EvtSetDataRole = LumiaUSBCSetDataRole;
