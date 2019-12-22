@@ -23,7 +23,19 @@ Environment:
 
 NTSTATUS USBC_Detach(PDEVICE_CONTEXT deviceContext)
 {
-	return UcmConnectorTypeCDetach(deviceContext->Connector);
+	NTSTATUS status;
+
+	status = UcmConnectorChargingStateChanged(deviceContext->Connector, UcmChargingStateNotCharging);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, "UcmConnectorChargingStateChanged failed: %!STATUS!", status);
+	}
+
+	status = UcmConnectorTypeCDetach(deviceContext->Connector);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, "UcmConnectorTypeCDetach failed: %!STATUS!", status);
+	}
+
+	return status;
 }
 
 NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target, unsigned int side)
@@ -58,13 +70,6 @@ NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target
 	}
 
 	connCtx->partner = target;
-
-	// Remove the previous connector
-	status = UcmConnectorTypeCDetach(deviceContext->Connector);
-	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, "UcmConnectorTypeCDetach failed to attach: %!STATUS!", status);
-		status = STATUS_SUCCESS;
-	}
 
 	if (target != UcmTypeCPartnerInvalid)
 	{
@@ -145,11 +150,6 @@ NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target
 			status = UcmConnectorTypeCCurrentAdChanged(deviceContext->Connector, UcmTypeCCurrentDefaultUsb);
 			if (!NT_SUCCESS(status)) {
 				TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, "UcmConnectorTypeCCurrentAdChanged failed: %!STATUS!", status);
-			}
-
-			status = UcmConnectorChargingStateChanged(deviceContext->Connector, UcmChargingStateNotCharging);
-			if (!NT_SUCCESS(status)) {
-				TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, "UcmConnectorChargingStateChanged failed: %!STATUS!", status);
 			}
 		}
 	}
