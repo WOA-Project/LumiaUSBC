@@ -15,7 +15,10 @@ Environment:
 --*/
 
 #include "Driver.h"
+
+#ifndef DBG_PRINT_EX_LOGGING
 #include "Registry.tmh"
+#endif
 
 // I can't believe RtlWriteRegistryValue exists, but not RtlReadRegistryValue...
 NTSTATUS LocalReadRegistryValue(PCWSTR registry_path, PCWSTR value_name, ULONG type,

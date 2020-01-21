@@ -20,14 +20,18 @@ Environment:
 #include "USBRole.h"
 #include <wchar.h>
 #include "UC120.h"
+
+#ifndef DBG_PRINT_EX_LOGGING
 #include "UC120.tmh"
+#endif
+
 #include "UC120Registers.h"
 
 NTSTATUS UC120_ReadRegisters(PDEVICE_CONTEXT deviceContext, PUC120_REGISTERS registers)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	DbgPrint("LumiaUSBC: UC120_ReadRegisters Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_ReadRegisters Entry");
 
 	UC120_REGISTERS registersdata;
 	RtlZeroMemory(&registersdata, sizeof(UC120_REGISTERS));
@@ -119,7 +123,7 @@ NTSTATUS UC120_ReadRegisters(PDEVICE_CONTEXT deviceContext, PUC120_REGISTERS reg
 	*registers = registersdata;
 
 Exit:
-	DbgPrint("LumiaUSBC: UC120_ReadRegisters Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_ReadRegisters Exit");
 	return status;
 }
 
@@ -178,7 +182,7 @@ NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, UC120_CONTEXT_
 
 	UNREFERENCED_PARAMETER(context);
 
-	DbgPrint("LumiaUSBC: UC120_GetCurrentRegisters Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_GetCurrentRegisters Entry");
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> UC120_GetCurrentRegisters");
 
 	RtlZeroMemory(&registers, sizeof(UC120_REGISTERS_PARSED));
@@ -218,7 +222,7 @@ NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, UC120_CONTEXT_
 
 	
 Exit:
-	DbgPrint("LumiaUSBC: UC120_GetCurrentRegisters Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_GetCurrentRegisters Exit");
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- UC120_GetCurrentRegisters");
 	return status;
 }
@@ -228,7 +232,7 @@ NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext)
 	NTSTATUS status = STATUS_SUCCESS;
 	unsigned char data = 0;
 
-	DbgPrint("LumiaUSBC: UC120_InterruptHandled Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_InterruptHandled Entry");
 
 	data = 0xFF; // Clear to 0xFF
 	status = WriteRegister(deviceContext, 2, &data, 1);
@@ -238,7 +242,7 @@ NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext)
 	}
 
 Exit:
-	DbgPrint("LumiaUSBC: UC120_InterruptHandled Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_InterruptHandled Exit");
 	return status;
 }
 
@@ -247,7 +251,7 @@ NTSTATUS UC120_InterruptsEnable(PDEVICE_CONTEXT deviceContext)
 	NTSTATUS status = STATUS_SUCCESS;
 	unsigned char data = 0;
 
-	DbgPrint("LumiaUSBC: UC120_InterruptsEnable Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_InterruptsEnable Entry");
 
 	data = 0xFF; // Clear to 0xFF
 	status = WriteRegister(deviceContext, 2, &data, 1);
@@ -289,7 +293,7 @@ NTSTATUS UC120_InterruptsEnable(PDEVICE_CONTEXT deviceContext)
 	}
 
 Exit:
-	DbgPrint("LumiaUSBC: UC120_InterruptsEnable Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_InterruptsEnable Exit");
 	return status;
 }
 
@@ -298,7 +302,7 @@ NTSTATUS UC120_InterruptsDisable(PDEVICE_CONTEXT deviceContext)
 	NTSTATUS status = STATUS_SUCCESS;
 	unsigned char data = 0;
 
-	DbgPrint("LumiaUSBC: UC120_InterruptsDisable Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_InterruptsDisable Entry");
 
 	status = ReadRegister(deviceContext, 4, &data, 1);
 	if (!NT_SUCCESS(status))
@@ -314,7 +318,7 @@ NTSTATUS UC120_InterruptsDisable(PDEVICE_CONTEXT deviceContext)
 	}
 
 Exit:
-	DbgPrint("LumiaUSBC: UC120_InterruptsDisable Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_InterruptsDisable Exit");
 	return status;
 }
 
@@ -323,7 +327,7 @@ NTSTATUS UC120_D0Entry(PDEVICE_CONTEXT deviceContext)
 	NTSTATUS status = STATUS_SUCCESS;
 	UCHAR Val = 0;
 
-	DbgPrint("LumiaUSBC: UC120_D0Entry Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_D0Entry Entry");
 
 	// Write as is
 	Val = 0x6;
@@ -388,7 +392,7 @@ NTSTATUS UC120_D0Entry(PDEVICE_CONTEXT deviceContext)
 	}
 
 exit:
-	DbgPrint("LumiaUSBC: UC120_D0Entry Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_D0Entry Exit");
 	return status;
 }
 
@@ -396,7 +400,7 @@ NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned cha
 {
 	NTSTATUS status = STATUS_SUCCESS;
 #if 0
-	DbgPrint("LumiaUSBC: UC120_UploadCalibrationData Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_UploadCalibrationData Entry");
 
 	switch (length)
 	{
@@ -512,6 +516,6 @@ exit:
 	UNREFERENCED_PARAMETER(length);
 #endif
 
-	DbgPrint("LumiaUSBC: UC120_UploadCalibrationData Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_UploadCalibrationData Exit");
 	return status;
 }

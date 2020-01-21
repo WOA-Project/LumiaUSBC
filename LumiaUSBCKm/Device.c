@@ -25,7 +25,9 @@ Environment:
 #include "Registry.h"
 #include "WorkItems.h"
 
+#ifndef DBG_PRINT_EX_LOGGING
 #include "device.tmh"
+#endif
 
 EVT_WDF_DEVICE_PREPARE_HARDWARE LumiaUSBCDevicePrepareHardware;
 EVT_WDF_DEVICE_RELEASE_HARDWARE LumiaUSBCDeviceReleaseHardware;
@@ -71,7 +73,7 @@ LumiaUSBCSetDataRole(
 
 	//UNREFERENCED_PARAMETER(DataRole);
 
-	DbgPrint("LumiaUSBC: LumiaUSBCSetDataRole Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSetDataRole Entry");
 
 	connCtx = ConnectorGetContext(Connector);
 
@@ -84,7 +86,7 @@ LumiaUSBCSetDataRole(
 
 	UcmConnectorDataDirectionChanged(Connector, TRUE, DataRole);
 
-	DbgPrint("LumiaUSBC: LumiaUSBCSetDataRole Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSetDataRole Exit");
 
 	return STATUS_SUCCESS;
 }
@@ -96,11 +98,11 @@ BOOLEAN EvtInterruptIsr(
 {
 	UNREFERENCED_PARAMETER(MessageID);
 
-	DbgPrint("LumiaUSBC: EvtInterruptIsr Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "EvtInterruptIsr Entry");
 
 	WdfInterruptQueueWorkItemForIsr(Interrupt);
 
-	DbgPrint("LumiaUSBC: EvtInterruptIsr Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "EvtInterruptIsr Exit");
 
 	return TRUE;
 }
@@ -112,14 +114,14 @@ NTSTATUS Uc120InterruptEnable(
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	DbgPrint("LumiaUSBC: Uc120InterruptEnable Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Uc120InterruptEnable Entry");
 
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedDevice);
 	UNREFERENCED_PARAMETER(Interrupt);
 
 	status = UC120_InterruptsEnable(ctx);
 
-	DbgPrint("LumiaUSBC: Uc120InterruptEnable Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Uc120InterruptEnable Exit");
 
 	return status;
 }
@@ -131,14 +133,14 @@ NTSTATUS Uc120InterruptDisable(
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	DbgPrint("LumiaUSBC: Uc120InterruptDisable Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Uc120InterruptDisable Entry");
 
 	PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedDevice);
 	UNREFERENCED_PARAMETER(Interrupt);
 
 	status = UC120_InterruptsDisable(ctx);
 
-	DbgPrint("LumiaUSBC: Uc120InterruptDisable Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Uc120InterruptDisable Exit");
 
 	return status;
 }
@@ -151,7 +153,7 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 	UNICODE_STRING ReadString;
 	WCHAR ReadStringBuffer[260];
 
-	DbgPrint("LumiaUSBC: OpenIOTarget Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget Entry");
 
 	RtlInitEmptyUnicodeString(&ReadString,
 		ReadStringBuffer,
@@ -161,7 +163,7 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 		res.LowPart,
 		res.HighPart);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: RESOURCE_HUB_CREATE_PATH_FROM_ID failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "RESOURCE_HUB_CREATE_PATH_FROM_ID failed 0x%x\n", status);
 		goto Exit;
 	}
 
@@ -170,19 +172,19 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 
 	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, target);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: WdfIoTargetCreate failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfIoTargetCreate failed 0x%x\n", status);
 		goto Exit;
 	}
 
 	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, use);
 	status = WdfIoTargetOpen(*target, &OpenParams);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: WdfIoTargetOpen failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfIoTargetOpen failed 0x%x\n", status);
 		goto Exit;
 	}
 
 Exit:
-	DbgPrint("LumiaUSBC: OpenIOTarget Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget Exit");
 	return status;
 }
 
@@ -213,7 +215,6 @@ LumiaUSBCProbeResources(
 
 	ULONG resourceCount;
 
-	DbgPrint("LumiaUSBC: LumiaUSBCProbeResources Entry\n");
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> LumiaUSBCProbeResources");
 
 	resourceCount = WdfCmResourceListGetCount(ResourcesTranslated);
@@ -250,7 +251,7 @@ LumiaUSBCProbeResources(
 					break;
 				}
 
-				DbgPrint("LumiaUSBC: Found GPIO resource id=%lu index=%lu\n", gpioFound, i);
+				TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found GPIO resource id=%lu index=%lu\n", gpioFound, i);
 
 				gpioFound++;
 			}
@@ -261,7 +262,7 @@ LumiaUSBCProbeResources(
 				DeviceContext->SpiId.LowPart = descriptor->u.Connection.IdLowPart;
 				DeviceContext->SpiId.HighPart = descriptor->u.Connection.IdHighPart;
 
-				DbgPrint("LumiaUSBC: Found SPI resource index=%lu\n", i);
+				TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found SPI resource index=%lu\n", i);
 
 				spiFound = TRUE;
 			}
@@ -288,7 +289,7 @@ LumiaUSBCProbeResources(
 				break;
 			}
 
-			DbgPrint("LumiaUSBC: Found Interrupt resource id=%lu index=%lu\n", interruptFound, i);
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found Interrupt resource id=%lu index=%lu\n", interruptFound, i);
 
 			interruptFound++;
 			break;
@@ -302,7 +303,6 @@ LumiaUSBCProbeResources(
 	if (!spiFound || gpioFound < 4 || interruptFound < 4)
 	{
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "Not all resources were found");
-		DbgPrint("LumiaUSBC: Not all resources were found \n");
 		status = STATUS_INSUFFICIENT_RESOURCES;
 		goto Exit;
 	}
@@ -326,8 +326,7 @@ LumiaUSBCProbeResources(
 
 	if (!NT_SUCCESS(status))
 	{
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for UC120 interrupt, %!STATUS!", status);
-		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for UC120 interrupt %x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for UC120 interrupt, 0x%x", status);
 		goto Exit;
 	}
 
@@ -347,8 +346,7 @@ LumiaUSBCProbeResources(
 
 	if (!NT_SUCCESS(status))
 	{
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for plug detection, %!STATUS!", status);
-		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for plug detection %x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for plug detection, 0x%x", status);
 		goto Exit;
 	}
 
@@ -368,8 +366,7 @@ LumiaUSBCProbeResources(
 
 	if (!NT_SUCCESS(status))
 	{
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for mystery 1 (VBUS), %!STATUS!", status);
-		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for mystery 1 %x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for mystery 1 (VBUS), 0x%x", status);
 		goto Exit;
 	}
 
@@ -389,12 +386,10 @@ LumiaUSBCProbeResources(
 
 	if (!NT_SUCCESS(status))
 	{
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for mystery 2, %!STATUS!", status);
-		DbgPrint("LumiaUSBC: WdfInterruptCreate failed for mystery 2 %x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfInterruptCreate failed for mystery 2, 0x%x", status);
 		goto Exit;
 	}
 
-	DbgPrint("LumiaUSBC: LumiaUSBCProbeResources Exit: %x\n", status);
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- LumiaUSBCProbeResources");
 
 Exit:
@@ -407,40 +402,40 @@ LumiaUSBCOpenResources(
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("LumiaUSBC: LumiaUSBCOpenResources Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCOpenResources Entry");
 
 	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: OpenIOTarget failed for SPI %x Falling back to fake SPI.\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for SPI 0x%x Falling back to fake SPI.\n", status);
 		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->VbusGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->VbusGpio);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: OpenIOTarget failed for VBUS GPIO %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for VBUS GPIO 0x%x\n", status);
 		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->PolGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->PolGpio);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: OpenIOTarget failed for polarity GPIO %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for polarity GPIO 0x%x\n", status);
 		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->AmselGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->AmselGpio);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: OpenIOTarget failed for alternate mode selection GPIO %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for alternate mode selection GPIO 0x%x\n", status);
 		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->EnGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->EnGpio);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: OpenIOTarget failed for mux enable GPIO %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for mux enable GPIO 0x%x\n", status);
 		goto Exit;
 	}
 
 Exit:
-	DbgPrint("LumiaUSBC: LumiaUSBCOpenResources Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCOpenResources Exit");
 	return status;
 }
 
@@ -449,7 +444,7 @@ LumiaUSBCCloseResources(
 	PDEVICE_CONTEXT ctx
 )
 {
-	DbgPrint("LumiaUSBC: LumiaUSBCCloseResources Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCCloseResources Entry");
 
 	if (ctx->Spi) {
 		WdfIoTargetClose(ctx->Spi);
@@ -471,7 +466,7 @@ LumiaUSBCCloseResources(
 		WdfIoTargetClose(ctx->EnGpio);
 	}
 
-	DbgPrint("LumiaUSBC: LumiaUSBCCloseResources Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCCloseResources Exit");
 }
 
 NTSTATUS LumiaUSBCDeviceD0Exit(
@@ -479,7 +474,7 @@ NTSTATUS LumiaUSBCDeviceD0Exit(
 	WDF_POWER_DEVICE_STATE TargetState
 )
 {
-	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Exit Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Exit Entry");
 
 	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 
@@ -487,49 +482,49 @@ NTSTATUS LumiaUSBCDeviceD0Exit(
 	{
 	case WdfPowerDeviceInvalid:
 	{
-		DbgPrint("LumiaUSBC: WdfPowerDeviceInvalid\n");
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceInvalid");
 		break;
 	}
 	case WdfPowerDeviceD0:
 	{
-		DbgPrint("LumiaUSBC: WdfPowerDeviceD0\n");
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD0");
 		break;
 	}
 	case WdfPowerDeviceD1:
 	{
-		DbgPrint("LumiaUSBC: WdfPowerDeviceD1\n");
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD1");
 		break;
 	}
 	case WdfPowerDeviceD2:
 	{
-		DbgPrint("LumiaUSBC: WdfPowerDeviceD2\n");
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD2");
 		break;
 	}
 	case WdfPowerDeviceD3:
 	{
-		DbgPrint("LumiaUSBC: WdfPowerDeviceD3\n");
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD3");
 		break;
 	}
 	case WdfPowerDeviceD3Final:
 	{
-		DbgPrint("LumiaUSBC: WdfPowerDeviceD3Final\n");
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD3Final");
 		break;
 	}
 	case WdfPowerDevicePrepareForHibernation:
 	{
-		DbgPrint("LumiaUSBC: WdfPowerDevicePrepareForHibernation\n");
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDevicePrepareForHibernation");
 		break;
 	}
 	case WdfPowerDeviceMaximum:
 	{
-		DbgPrint("LumiaUSBC: WdfPowerDeviceMaximum\n");
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceMaximum");
 		break;
 	}
 	}
 
 	LumiaUSBCCloseResources(devCtx);
 
-	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Exit Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Exit Exit");
 	return STATUS_SUCCESS;
 }
 
@@ -538,11 +533,11 @@ NTSTATUS LumiaUSBCDeviceReleaseHardware(
 	WDFCMRESLIST ResourcesTranslated
 )
 {
-	DbgPrint("LumiaUSBC: LumiaUSBCDeviceReleaseHardware Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceReleaseHardware Entry");
 
 	UNREFERENCED_PARAMETER((Device, ResourcesTranslated));
 
-	DbgPrint("LumiaUSBC: LumiaUSBCDeviceReleaseHardware Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceReleaseHardware Exit");
 
 	return STATUS_SUCCESS;
 }
@@ -562,13 +557,13 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_PD_CONFIG pdConfig;
 	WDF_OBJECT_ATTRIBUTES attr;
 
-	DbgPrint("LumiaUSBC: LumiaUSBCDevicePrepareHardware Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDevicePrepareHardware Entry");
 
 	devCtx = DeviceGetContext(Device);
 
 	status = LumiaUSBCProbeResources(devCtx, ResourcesTranslated, ResourcesRaw);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: LumiaUSBCProbeResources failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCProbeResources failed 0x%x\n", status);
 		goto Exit;
 	}
 
@@ -585,7 +580,7 @@ LumiaUSBCDevicePrepareHardware(
 	status = UcmInitializeDevice(Device, &ucmCfg);
 	if (!NT_SUCCESS(status))
 	{
-		DbgPrint("LumiaUSBC: UcmInitializeDevice failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UcmInitializeDevice failed 0x%x\n", status);
 		goto Exit;
 	}
 
@@ -611,13 +606,13 @@ LumiaUSBCDevicePrepareHardware(
 	status = UcmConnectorCreate(Device, &connCfg, &attr, &devCtx->Connector);
 	if (!NT_SUCCESS(status))
 	{
-		DbgPrint("LumiaUSBC: UcmConnectorCreate failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UcmConnectorCreate failed 0x%x\n", status);
 		goto Exit;
 	}
 
 	//UcmEventInitialize(&connCtx->EventSetDataRole);
 Exit:
-	DbgPrint("LumiaUSBC: LumiaUSBCDevicePrepareHardware Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDevicePrepareHardware Exit");
 	return status;
 }
 
@@ -629,13 +624,13 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	NTSTATUS status = STATUS_SUCCESS;
 	UNREFERENCED_PARAMETER(PreviousState);
 
-	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Entry Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Entry");
 
 	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 
 	status = LumiaUSBCOpenResources(devCtx);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: LumiaUSBCOpenResources failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCOpenResources failed 0x%x\n", status);
 		goto Exit;
 	}
 
@@ -649,7 +644,7 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	SetGPIO(devCtx, devCtx->EnGpio, &value);
 
 Exit:
-	DbgPrint("LumiaUSBC: LumiaUSBCDeviceD0Entry Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Exit");
 	return status;
 }
 
@@ -674,9 +669,11 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	// { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0D, 0x7D, 0x32, 0x5F, 0x9E };
 	UCHAR				DefaultCalibrationBlob[] = { 0x0C, 0x7C, 0x31, 0x5E, 0x9D, 0x0A, 0x7A, 0x2F, 0x5C, 0x9B };
 
-	LONGLONG			CalibrationFileSize;
+	LONGLONG			CalibrationFileSize = 0;
 
-	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Entry\n");
+	BOOLEAN             SkipCalibration = FALSE;
+
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSelfManagedIoInit Entry");
 
 	PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 
@@ -691,7 +688,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 
 	status = PoFxRegisterDevice(WdfDeviceWdmGetPhysicalDevice(Device), &poFxDevice, &devCtx->PoHandle);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: PoFxRegisterDevice failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxRegisterDevice failed 0x%x\n", status);
 		goto Exit;
 	}
 
@@ -705,7 +702,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	input[7] = 2;
 	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: PoFxPowerControl failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxPowerControl failed 0x%x\n", status);
 		goto Exit;
 	}
 
@@ -722,7 +719,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		goto Exit;
 	}
 
-	DbgPrint("LumiaUSBC: acquire calibration file handle\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "acquire calibration file handle");
 	status = ZwCreateFile(&hCalibrationFile,
 		GENERIC_READ,
 		&CalibrationFileObjectAttribute, 
@@ -735,76 +732,83 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	);
 
 	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: failed to open calibration file %x\n", status);
-		goto Exit;
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "failed to open calibration file 0x%x, skipping calibration. Is this a FUSBC device?", status);
+		status = STATUS_SUCCESS;
+		SkipCalibration = TRUE;
 	}
 
-	DbgPrint("LumiaUSBC: stat calibration file\n");
-	status = ZwQueryInformationFile(
-		hCalibrationFile,
-		&CalibrationIoStatusBlock,
-		&CalibrationFileInfo,
-		sizeof(CalibrationFileInfo),
-		FileStandardInformation
-	);
-	
-	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: failed to stat calibration file %x\n", status);
+	if (!SkipCalibration)
+	{
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "stat calibration file");
+		status = ZwQueryInformationFile(
+			hCalibrationFile,
+			&CalibrationIoStatusBlock,
+			&CalibrationFileInfo,
+			sizeof(CalibrationFileInfo),
+			FileStandardInformation
+		);
+
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "failed to stat calibration file 0x%x\n", status);
+			ZwClose(hCalibrationFile);
+			goto Exit;
+		}
+
+		CalibrationFileSize = CalibrationFileInfo.EndOfFile.QuadPart;
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "calibration file size %lld\n", CalibrationFileSize);
+
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "read calibration file");
+		RtlZeroMemory(CalibrationBlob, sizeof(CalibrationBlob));
+		CalibrationFileByteOffset.LowPart = 0;
+		CalibrationFileByteOffset.HighPart = 0;
+		status = ZwReadFile(hCalibrationFile,
+			NULL, NULL, NULL, &CalibrationIoStatusBlock,
+			CalibrationBlob, UC120_CALIBRATIONFILE_SIZE, &CalibrationFileByteOffset, NULL
+		);
+
 		ZwClose(hCalibrationFile);
-		goto Exit;
-	}
-
-	CalibrationFileSize = CalibrationFileInfo.EndOfFile.QuadPart;
-	DbgPrint("LumiaUSBC: calibration file size %lld\n", CalibrationFileSize);
-
-	DbgPrint("LumiaUSBC: read calibration file\n");
-	RtlZeroMemory(CalibrationBlob, sizeof(CalibrationBlob));
-	CalibrationFileByteOffset.LowPart = 0;
-	CalibrationFileByteOffset.HighPart = 0;
-	status = ZwReadFile(hCalibrationFile, 
-		NULL, NULL, NULL, &CalibrationIoStatusBlock,
-		CalibrationBlob, UC120_CALIBRATIONFILE_SIZE, &CalibrationFileByteOffset, NULL
-	);
-
-	ZwClose(hCalibrationFile);
-	if (!NT_SUCCESS(status)) {
-		DbgPrint("LumiaUSBC: failed to read calibration file %x\n", status);
-		goto Exit;
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "failed to read calibration file 0x%x\n", status);
+			goto Exit;
+		}
 	}
 
 	status = UC120_D0Entry(devCtx);
 	if (!NT_SUCCESS(status))
 	{
-		DbgPrint("LumiaUSBC: UC120_D0Entry failed %x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_D0Entry failed 0x%x\n", status);
 		goto Exit;
 	}
 
-	// Initialize the UC120 accordingly
-	if (CalibrationFileSize == 11) {
-		// Skip the first byte
-		status = UC120_UploadCalibrationData(devCtx, &CalibrationBlob[1], 10);
-	}
-	else if (CalibrationFileSize == 8) {
-		// No skip
-		status = UC120_UploadCalibrationData(devCtx, CalibrationBlob, 8);
-	}
-	else {
-		// Not recognized, use default
-		DbgPrint("LumiaUSBC: Unknown calibration data, fallback to the default\n");
-		status = UC120_UploadCalibrationData(devCtx, DefaultCalibrationBlob, sizeof(DefaultCalibrationBlob));
-	}
-
-	if (!NT_SUCCESS(status))
+	if (!SkipCalibration)
 	{
-		DbgPrint("LumiaUSBC: UC120_UploadCalibrationData failed %x\n", status);
-		goto Exit;
+		// Initialize the UC120 accordingly
+		if (CalibrationFileSize == 11) {
+			// Skip the first byte
+			status = UC120_UploadCalibrationData(devCtx, &CalibrationBlob[1], 10);
+		}
+		else if (CalibrationFileSize == 8) {
+			// No skip
+			status = UC120_UploadCalibrationData(devCtx, CalibrationBlob, 8);
+		}
+		else {
+			// Not recognized, use default
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Unknown calibration data, fallback to the default");
+			status = UC120_UploadCalibrationData(devCtx, DefaultCalibrationBlob, sizeof(DefaultCalibrationBlob));
+		}
+
+		if (!NT_SUCCESS(status))
+		{
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_UploadCalibrationData failed 0x%x\n", status);
+			goto Exit;
+		}
 	}
 
 	delay.QuadPart = -2000000;
 	KeDelayExecutionThread(UserMode, TRUE, &delay);
 
 Exit:
-	DbgPrint("LumiaUSBC: LumiaUSBCSelfManagedIoInit Exit\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSelfManagedIoInit Exit");
 	return status;
 }
 
@@ -839,7 +843,7 @@ Return Value:
 
 	PAGED_CODE();
 
-	DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Entry\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCKmCreateDevice Entry");
 
 	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
 	pnpPowerCallbacks.EvtDevicePrepareHardware = LumiaUSBCDevicePrepareHardware;
@@ -876,7 +880,7 @@ Return Value:
 		status = UcmInitializeDevice(device, &ucmConfig);
 		if (!NT_SUCCESS(status))
 		{
-			DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCKmCreateDevice Exit: 0x%x\n", status);
 			goto Exit;
 		}
 
@@ -909,7 +913,7 @@ Return Value:
 			&idleSettings
 		);
 		if (!NT_SUCCESS(status)) {
-			DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCKmCreateDevice Exit: 0x%x\n", status);
 			goto Exit;
 		}
 
@@ -932,6 +936,6 @@ Return Value:
 	}
 
 Exit:
-	DbgPrint("LumiaUSBC: LumiaUSBCKmCreateDevice Exit: %x\n", status);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCKmCreateDevice Exit: 0x%x\n", status);
 	return status;
 }

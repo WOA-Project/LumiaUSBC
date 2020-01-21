@@ -14,6 +14,8 @@ Environment:
 
 --*/
 
+#ifndef DBG_PRINT_EX_LOGGING
+
 //
 // Define the tracing flags.
 //
@@ -62,3 +64,12 @@ Environment:
 // FUNC TraceEvents(LEVEL, FLAGS, MSG, ...);
 // end_wpp
 //
+#else
+
+#define Trace(Level, Msg, ...) \
+			DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "LumiaUSBC: " Msg "\n", __VA_ARGS__);
+
+#define TraceEvents(Level, Flags, Msg, ...) \
+			DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "LumiaUSBC: " Msg "\n", __VA_ARGS__);
+
+#endif

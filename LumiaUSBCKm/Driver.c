@@ -15,7 +15,10 @@ Environment:
 --*/
 
 #include "driver.h"
+
+#ifndef DBG_PRINT_EX_LOGGING
 #include "driver.tmh"
+#endif
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (INIT, DriverEntry)
@@ -58,10 +61,13 @@ Return Value:
     NTSTATUS status;
     WDF_OBJECT_ATTRIBUTES attributes;
 
+
+#ifndef DBG_PRINT_EX_LOGGING
     //
     // Initialize WPP Tracing
     //
     WPP_INIT_TRACING(DriverObject, RegistryPath);
+#endif
 
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Entry");
 
@@ -85,7 +91,10 @@ Return Value:
 
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfDriverCreate failed %!STATUS!", status);
+
+#ifndef DBG_PRINT_EX_LOGGING
         WPP_CLEANUP(DriverObject);
+#endif
         return status;
     }
 
@@ -158,8 +167,11 @@ Return Value:
 
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Entry");
 
+
+#ifndef DBG_PRINT_EX_LOGGING
     //
     // Stop WPP Tracing
     //
     WPP_CLEANUP(WdfDriverWdmGetDriverObject((WDFDRIVER)DriverObject));
+#endif
 }

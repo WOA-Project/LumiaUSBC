@@ -17,7 +17,11 @@ Environment:
 #include "Driver.h"
 #include "SPI.h"
 #include "UC120.h"
+
+#ifndef DBG_PRINT_EX_LOGGING
 #include "WorkItems.tmh"
+#endif
+
 #include "UC120Registers.h"
 #include "USBRole.h"
 
@@ -36,7 +40,7 @@ void Uc120InterruptWorkItem(
 	UCM_TYPEC_PARTNER UcmPartnerType = UcmTypeCPartnerInvalid;
 
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the UC120");
-	DbgPrint("LumiaUSBC: Got an interrupt from the UC120!\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Got an interrupt from the UC120!");
 
 	// Read register 2
 	Status = ReadRegister(ctx, 2, &Reg2, 1);
@@ -137,7 +141,7 @@ void PlugDetInterruptWorkItem(
 	UCHAR Buf = 0;
 
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the PLUGDET");
-	DbgPrint("LumiaUSBC: Got an interrupt from PLUGDET!\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Got an interrupt from PLUGDET!");
 
 	if (ctx->Connected) {
 		// Reset the connector
@@ -181,7 +185,7 @@ void Mystery1InterruptWorkItem(
 	NTSTATUS Status;
 
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the Mystery 1");
-	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 1! R5 48 responded\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Got an interrupt from Mystery 1! R5 48 responded");
 
 	Status = WriteRegister(ctx, 5, &Unk, 1);
 	if (!NT_SUCCESS(Status)) {
@@ -199,5 +203,5 @@ void Mystery2InterruptWorkItem(
 	// PDEVICE_CONTEXT ctx = DeviceGetContext(AssociatedObject);
 
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Got an interrupt from the Mystery 2");
-	DbgPrint("LumiaUSBC: Got an interrupt from Mystery 2!\n");
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Got an interrupt from Mystery 2!");
 }

@@ -16,7 +16,10 @@ Environment:
 
 #include "Driver.h"
 #include <gpio.h>
+
+#ifndef DBG_PRINT_EX_LOGGING
 #include "GPIO.tmh"
+#endif
 
 NTSTATUS GetGPIO(PDEVICE_CONTEXT ctx, WDFIOTARGET gpio, unsigned char* value)
 {

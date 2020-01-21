@@ -1,6 +1,9 @@
 #include "Driver.h"
 #include "SPI.h"
+
+#ifndef DBG_PRINT_EX_LOGGING
 #include "SPI.tmh"
+#endif
 
 #include <spb.h>
 
@@ -32,7 +35,6 @@ NTSTATUS ReadRegisterFullDuplex(
 )
 {
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> ReadRegisterFullDuplex");
-	DbgPrint("-> ReadRegisterFullDuplex\n");
 
 	// Params
 	NTSTATUS status = STATUS_SUCCESS;
@@ -66,8 +68,7 @@ NTSTATUS ReadRegisterFullDuplex(
 	);
 
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed %!STATUS!", status);
-		DbgPrint("ReadRegisterFullDuplex: WdfMemoryCreate failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed 0x%x", status);
 		goto exit;
 	}
 
@@ -82,8 +83,7 @@ NTSTATUS ReadRegisterFullDuplex(
 	);
 
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed %!STATUS!", status);
-		DbgPrint("ReadRegisterFullDuplex: WdfMemoryCreate failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed 0x%x", status);
 		WdfObjectDelete(SpbTransferInputMemory);
 		goto exit;
 	}
@@ -129,8 +129,7 @@ NTSTATUS ReadRegisterFullDuplex(
 	);
 
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfIoTargetSendIoctlSynchronously failed %!STATUS!", status);
-		DbgPrint("ReadRegisterFullDuplex: WdfIoTargetSendIoctlSynchronously failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfIoTargetSendIoctlSynchronously failed 0x%x", status);
 		WdfObjectDelete(SpbTransferInputMemory);
 		WdfObjectDelete(SpbTransferOutputMemory);
 		goto exit;
@@ -141,13 +140,12 @@ NTSTATUS ReadRegisterFullDuplex(
 	WdfObjectDelete(SpbTransferOutputMemory);
 
 	if (Length == 1) {
-		DbgPrint("ReadRegisterFullDuplex: register 0x%x value 0x%x\n", Register, (UCHAR) *((UCHAR*) Value));
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "ReadRegisterFullDuplex: register 0x%x value 0x%x", Register, (UCHAR) *((UCHAR*) Value));
 	}
 
 exit:
 	WdfObjectReleaseLock(pContext->Device);
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- ReadRegisterFullDuplex");
-	DbgPrint("<- ReadRegisterFullDuplex\n");
 	return status;
 }
 
@@ -159,7 +157,6 @@ NTSTATUS WriteRegisterFullDuplex(
 )
 {
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> WriteRegisterFullDuplex");
-	DbgPrint("-> WriteRegisterFullDuplex\n");
 
 	NTSTATUS status = STATUS_SUCCESS;
 	UCHAR Command = (unsigned char)((Register << 3) | 1);
@@ -183,8 +180,7 @@ NTSTATUS WriteRegisterFullDuplex(
 	);
 
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed %!STATUS!", status);
-		DbgPrint("WriteRegisterFullDuplex: WdfMemoryCreate failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfMemoryCreate failed 0x%x", status);
 		goto exit;
 	}
 
@@ -204,8 +200,7 @@ NTSTATUS WriteRegisterFullDuplex(
 	);
 
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfIoTargetSendWriteSynchronously failed %!STATUS!", status);
-		DbgPrint("ReadRegisterFullDuplex: WdfIoTargetSendWriteSynchronously failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfIoTargetSendWriteSynchronously failed 0x%x", status);
 		WdfObjectDelete(SpbTransferOutputMemory);
 		goto exit;
 	}
@@ -213,6 +208,5 @@ NTSTATUS WriteRegisterFullDuplex(
 exit:
 	WdfObjectReleaseLock(pContext->Device);
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- WriteRegisterFullDuplex");
-	DbgPrint("<- WriteRegisterFullDuplex\n");
 	return status;
 }

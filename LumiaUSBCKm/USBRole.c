@@ -18,7 +18,11 @@ Environment:
 #include "GPIO.h"
 #include "Registry.h"
 #include <wchar.h>
+
+#ifndef DBG_PRINT_EX_LOGGING
 #include "USBRole.tmh"
+#endif
+
 #include "USBRole.h"
 
 NTSTATUS USBC_Detach(PDEVICE_CONTEXT deviceContext)
