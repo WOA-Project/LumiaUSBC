@@ -91,6 +91,34 @@ LumiaUSBCSetDataRole(
 	return STATUS_SUCCESS;
 }
 
+NTSTATUS
+LumiaUSBCSetPowerRole(
+	UCMCONNECTOR Connector,
+	UCM_POWER_ROLE PowerRole
+)
+{
+	PCONNECTOR_CONTEXT connCtx;
+
+	//UNREFERENCED_PARAMETER(PowerRole);
+
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSetPowerRole Entry");
+
+	connCtx = ConnectorGetContext(Connector);
+
+	RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE,
+		(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+		L"PowerRoleRequested",
+		REG_DWORD,
+		&PowerRole,
+		sizeof(ULONG));
+
+	UcmConnectorPowerDirectionChanged(Connector, TRUE, PowerRole);
+
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSetPowerRole Exit");
+
+	return STATUS_SUCCESS;
+}
+
 BOOLEAN EvtInterruptIsr(
 	WDFINTERRUPT Interrupt,
 	ULONG MessageID
@@ -314,8 +342,8 @@ LumiaUSBCProbeResources(
 	interruptConfig.InterruptRaw = WdfCmResourceListGetDescriptor(ResourcesRaw, UC120Interrupt);
 	interruptConfig.EvtInterruptWorkItem = Uc120InterruptWorkItem;
 
-	// interruptConfig.EvtInterruptEnable = Uc120InterruptEnable;
-	// interruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
+	interruptConfig.EvtInterruptEnable = Uc120InterruptEnable;
+	interruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
 
 	status = WdfInterruptCreate(
 		DeviceContext->Device,
@@ -585,9 +613,11 @@ LumiaUSBCDevicePrepareHardware(
 	}
 
 	//
-	// Create a USB Type-C connector #0 with PD
+	// Assemble the Type-C and PD configuration for UCM.
 	//
+
 	UCM_CONNECTOR_CONFIG_INIT(&connCfg, 0);
+
 	UCM_CONNECTOR_TYPEC_CONFIG_INIT(
 		&typeCConfig,
 		UcmTypeCOperatingModeDrp,
@@ -595,13 +625,20 @@ LumiaUSBCDevicePrepareHardware(
 	);
 
 	typeCConfig.EvtSetDataRole = LumiaUSBCSetDataRole;
+	typeCConfig.AudioAccessoryCapable = FALSE;
 
 	UCM_CONNECTOR_PD_CONFIG_INIT(&pdConfig, UcmPowerRoleSink | UcmPowerRoleSource);
+
+	pdConfig.EvtSetPowerRole = LumiaUSBCSetPowerRole;
 
 	connCfg.TypeCConfig = &typeCConfig;
 	connCfg.PdConfig = &pdConfig;
 
 	WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attr, CONNECTOR_CONTEXT);
+
+	//
+	// Create the UCM connector object.
+	//
 
 	status = UcmConnectorCreate(Device, &connCfg, &attr, &devCtx->Connector);
 	if (!NT_SUCCESS(status))
@@ -610,7 +647,6 @@ LumiaUSBCDevicePrepareHardware(
 		goto Exit;
 	}
 
-	//UcmEventInitialize(&connCtx->EventSetDataRole);
 Exit:
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDevicePrepareHardware Exit");
 	return status;

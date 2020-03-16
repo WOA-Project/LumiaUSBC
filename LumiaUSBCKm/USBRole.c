@@ -64,7 +64,7 @@ NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target
 	SetGPIO(deviceContext, deviceContext->PolGpio, &value);
 
 	// Commented out for safety until we're sure everything is working as expected.
-	SetGPIO(deviceContext, deviceContext->VbusGpio, &vbus);
+	// SetGPIO(deviceContext, deviceContext->VbusGpio, &vbus);
 
 	connCtx = ConnectorGetContext(deviceContext->Connector);
 
