@@ -866,7 +866,7 @@ LumiaUSBCDevicePrepareHardware(
 	UCM_CONNECTOR_TYPEC_CONFIG_INIT(
 		&typeCConfig,
 		UcmTypeCOperatingModeDrp,
-		UcmTypeCCurrentDefaultUsb);
+		UcmTypeCCurrent3000mA | UcmTypeCCurrent1500mA | UcmTypeCCurrentDefaultUsb);
 
 	typeCConfig.EvtSetDataRole = LumiaUSBCSetDataRole;
 
@@ -1034,44 +1034,17 @@ NTSTATUS LumiaUSBCDeviceD0Entry(
 	}
 	value = !!data;
 	SetGPIO(devCtx, devCtx->VbusGpio, &value);
-	if (data) {
-		UCM_PD_POWER_DATA_OBJECT Pdos[1];
-		UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
 
-		Pdos[0].FixedSupplyPdo.VoltageIn50mV = 100;         // 5V
-		Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 50;  // 500 mA
-		UcmConnectorPdSourceCaps(devCtx->Connector, Pdos, 1);
-		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
-		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
-		PdParams.ChargingState = UcmChargingStateNotCharging;
-		UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
+	if (data) {
 		UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSource);
-		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
+		UcmConnectorTypeCCurrentAdChanged(devCtx->Connector, UcmTypeCCurrentDefaultUsb);
+		UcmConnectorChargingStateChanged(devCtx->Connector, UcmChargingStateNotCharging);
 	}
 	else
 	{
-		UCM_PD_POWER_DATA_OBJECT Pdos[1];
-		UCM_PD_POWER_DATA_OBJECT_INIT_FIXED(&Pdos[0]);
-
-		Pdos[0].FixedSupplyPdo.VoltageIn50mV = 100;         // 5V
-		Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = 50;  // 500 mA - can be overridden in Registry
-		if (NT_SUCCESS(MyReadRegistryValue(
-			(PCWSTR)L"\\Registry\\Machine\\System\\usbc",
-			(PCWSTR)L"ChargeCurrent",
-			REG_DWORD,
-			&data,
-			sizeof(ULONG))))
-		{
-			Pdos[0].FixedSupplyPdo.MaximumCurrentIn10mA = data / 10;
-		}
-		UcmConnectorPdPartnerSourceCaps(devCtx->Connector, Pdos, 1);
-		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS PdParams;
-		UCM_CONNECTOR_PD_CONN_STATE_CHANGED_PARAMS_INIT(&PdParams, UcmPdConnStateNotSupported);
-		PdParams.ChargingState = UcmChargingStateNominalCharging;
-		UcmConnectorPdConnectionStateChanged(devCtx->Connector, &PdParams);
 		UcmConnectorPowerDirectionChanged(devCtx->Connector, TRUE, UcmPowerRoleSink);
 		UcmConnectorTypeCCurrentAdChanged(devCtx->Connector, UcmTypeCCurrent3000mA);
-		UcmConnectorChargingStateChanged(devCtx->Connector, PdParams.ChargingState);
+		UcmConnectorChargingStateChanged(devCtx->Connector, UcmChargingStateNominalCharging);
 	}
 
 	return status;
