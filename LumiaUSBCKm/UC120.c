@@ -399,7 +399,7 @@ exit:
 NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned char* calibrationFile, unsigned int length)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-#if 0
+#if 1
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_UploadCalibrationData Entry");
 
 	switch (length)
@@ -409,52 +409,52 @@ NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned cha
 		status = WriteRegister(deviceContext, 18, calibrationFile + 0, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 19, calibrationFile + 1, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 20, calibrationFile + 2, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 21, calibrationFile + 3, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 26, calibrationFile + 4, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 22, calibrationFile + 5, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 23, calibrationFile + 6, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 24, calibrationFile + 7, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 25, calibrationFile + 8, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 27, calibrationFile + 9, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		break;
 	}
@@ -463,49 +463,49 @@ NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned cha
 		status = WriteRegister(deviceContext, 18, calibrationFile + 0, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 19, calibrationFile + 1, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 20, calibrationFile + 2, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 21, calibrationFile + 3, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 22, calibrationFile + 4, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 23, calibrationFile + 5, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 24, calibrationFile + 6, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		status = WriteRegister(deviceContext, 25, calibrationFile + 7, 1);
 		if (!NT_SUCCESS(status))
 		{
-			goto Exit;
+			goto exit;
 		}
 		break;
 	}
 	default:
 	{
 		status = STATUS_BAD_DATA;
-		goto Exit;
+		goto exit;
 	}
 	}
 
