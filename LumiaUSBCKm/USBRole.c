@@ -63,8 +63,8 @@ NTSTATUS USBC_ChangeRole(PDEVICE_CONTEXT deviceContext, UCM_TYPEC_PARTNER target
 	unsigned char value = (unsigned char)side;
 	SetGPIO(deviceContext, deviceContext->PolGpio, &value);
 
-	// Commented out for safety until we're sure everything is working as expected.
-	// SetGPIO(deviceContext, deviceContext->VbusGpio, &vbus);
+	// Turn on VBUS if needed
+	SetGPIO(deviceContext, deviceContext->VbusGpio, &vbus);
 
 	connCtx = ConnectorGetContext(deviceContext->Connector);
 
