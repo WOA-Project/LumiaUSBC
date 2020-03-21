@@ -191,7 +191,7 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 		res.LowPart,
 		res.HighPart);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "RESOURCE_HUB_CREATE_PATH_FROM_ID failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "RESOURCE_HUB_CREATE_PATH_FROM_ID failed 0x%x", status);
 		goto Exit;
 	}
 
@@ -200,14 +200,14 @@ NTSTATUS OpenIOTarget(PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use, W
 
 	status = WdfIoTargetCreate(ctx->Device, &ObjectAttributes, target);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfIoTargetCreate failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfIoTargetCreate failed 0x%x", status);
 		goto Exit;
 	}
 
 	WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&OpenParams, &ReadString, use);
 	status = WdfIoTargetOpen(*target, &OpenParams);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfIoTargetOpen failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfIoTargetOpen failed 0x%x", status);
 		goto Exit;
 	}
 
@@ -279,7 +279,7 @@ LumiaUSBCProbeResources(
 					break;
 				}
 
-				TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found GPIO resource id=%lu index=%lu\n", gpioFound, i);
+				TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found GPIO resource id=%lu index=%lu", gpioFound, i);
 
 				gpioFound++;
 			}
@@ -290,7 +290,7 @@ LumiaUSBCProbeResources(
 				DeviceContext->SpiId.LowPart = descriptor->u.Connection.IdLowPart;
 				DeviceContext->SpiId.HighPart = descriptor->u.Connection.IdHighPart;
 
-				TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found SPI resource index=%lu\n", i);
+				TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found SPI resource index=%lu", i);
 
 				spiFound = TRUE;
 			}
@@ -317,7 +317,7 @@ LumiaUSBCProbeResources(
 				break;
 			}
 
-			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found Interrupt resource id=%lu index=%lu\n", interruptFound, i);
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Found Interrupt resource id=%lu index=%lu", interruptFound, i);
 
 			interruptFound++;
 			break;
@@ -434,31 +434,31 @@ LumiaUSBCOpenResources(
 
 	status = OpenIOTarget(ctx, ctx->SpiId, GENERIC_READ | GENERIC_WRITE, &ctx->Spi);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for SPI 0x%x Falling back to fake SPI.\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for SPI 0x%x Falling back to fake SPI.", status);
 		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->VbusGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->VbusGpio);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for VBUS GPIO 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for VBUS GPIO 0x%x", status);
 		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->PolGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->PolGpio);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for polarity GPIO 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for polarity GPIO 0x%x", status);
 		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->AmselGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->AmselGpio);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for alternate mode selection GPIO 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for alternate mode selection GPIO 0x%x", status);
 		goto Exit;
 	}
 
 	status = OpenIOTarget(ctx, ctx->EnGpioId, GENERIC_READ | GENERIC_WRITE, &ctx->EnGpio);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for mux enable GPIO 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget failed for mux enable GPIO 0x%x", status);
 		goto Exit;
 	}
 
@@ -620,7 +620,7 @@ LumiaUSBCDevicePrepareHardware(
 
 	UCM_CONNECTOR_TYPEC_CONFIG_INIT(
 		&typeCConfig,
-		UcmTypeCOperatingModeDrp,
+		UcmTypeCOperatingModeDrp | UcmTypeCOperatingModeUfp | UcmTypeCOperatingModeDfp,
 		UcmTypeCCurrent3000mA | UcmTypeCCurrent1500mA | UcmTypeCCurrentDefaultUsb
 	);
 
@@ -724,7 +724,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 
 	status = PoFxRegisterDevice(WdfDeviceWdmGetPhysicalDevice(Device), &poFxDevice, &devCtx->PoHandle);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxRegisterDevice failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxRegisterDevice failed 0x%x", status);
 		goto Exit;
 	}
 
@@ -738,7 +738,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	input[7] = 2;
 	status = PoFxPowerControl(devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output, sizeof(output), NULL);
 	if (!NT_SUCCESS(status)) {
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxPowerControl failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxPowerControl failed 0x%x", status);
 		goto Exit;
 	}
 
@@ -785,13 +785,13 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 		);
 
 		if (!NT_SUCCESS(status)) {
-			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "failed to stat calibration file 0x%x\n", status);
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "failed to stat calibration file 0x%x", status);
 			ZwClose(hCalibrationFile);
 			goto Exit;
 		}
 
 		CalibrationFileSize = CalibrationFileInfo.EndOfFile.QuadPart;
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "calibration file size %lld\n", CalibrationFileSize);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "calibration file size %lld", CalibrationFileSize);
 
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "read calibration file");
 		RtlZeroMemory(CalibrationBlob, sizeof(CalibrationBlob));
@@ -804,7 +804,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 
 		ZwClose(hCalibrationFile);
 		if (!NT_SUCCESS(status)) {
-			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "failed to read calibration file 0x%x\n", status);
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "failed to read calibration file 0x%x", status);
 			goto Exit;
 		}
 	}
@@ -812,7 +812,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 	status = UC120_D0Entry(devCtx);
 	if (!NT_SUCCESS(status))
 	{
-		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_D0Entry failed 0x%x\n", status);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_D0Entry failed 0x%x", status);
 		goto Exit;
 	}
 
@@ -835,7 +835,7 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(
 
 		if (!NT_SUCCESS(status))
 		{
-			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_UploadCalibrationData failed 0x%x\n", status);
+			TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_UploadCalibrationData failed 0x%x", status);
 			goto Exit;
 		}
 	}

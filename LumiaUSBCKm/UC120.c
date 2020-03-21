@@ -195,12 +195,14 @@ NTSTATUS UC120_GetCurrentRegisters(PDEVICE_CONTEXT deviceContext, UC120_CONTEXT_
 		goto Exit;
 	}
 
-	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_BEHAVIOR, "Reg2: 0x%x, ChargerBit1: %d, DongleBit: %d, ChargerBit2: %d",
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg2: 0x%x; Charger1 = %d, Charger2 = %d, Dongle = %d, PoweredCableWithUfp = %d, PoweredCable = %d, PoweredCableNoDfp = %d",
 		registers.Register2.RegisterData,
 		registers.Register2.RegisterContent.Charger1,
+		registers.Register2.RegisterContent.Charger2,
 		registers.Register2.RegisterContent.Dongle,
-		registers.Register2.RegisterContent.Charger2
-	);
+		registers.Register2.RegisterContent.PoweredCableWithUfp,
+		registers.Register2.RegisterContent.PoweredCable,
+		registers.Register2.RegisterContent.PoweredCableNoDfp);
 
 	// Read register 7
 	status = ReadRegister(deviceContext, 7, &registers.Register7, 1);

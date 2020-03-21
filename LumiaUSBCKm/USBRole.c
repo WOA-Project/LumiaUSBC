@@ -28,6 +28,10 @@ Environment:
 NTSTATUS USBC_Detach(PDEVICE_CONTEXT deviceContext)
 {
 	NTSTATUS status;
+	unsigned char vbus = 0;
+
+	// Turn off VBUS if needed
+	SetGPIO(deviceContext, deviceContext->VbusGpio, &vbus);
 
 	status = UcmConnectorChargingStateChanged(deviceContext->Connector, UcmChargingStateNotCharging);
 	if (!NT_SUCCESS(status)) {

@@ -64,12 +64,14 @@ typedef struct _UC120_REG2
 		BYTE RegisterData;
 		struct
 		{
-			unsigned int Reserved0 : 1;
-			unsigned int Reserved1 : 1;
-			unsigned int Charger1 : 1;
-			unsigned int Dongle : 1;
-			unsigned int Charger2 : 1;
-			unsigned int Reserved3 : 3;
+			unsigned int Reserved0           : 1;
+			unsigned int PoweredCableWithUfp : 1;
+			unsigned int Charger1            : 1;
+			unsigned int Dongle              : 1;
+			unsigned int Charger2            : 1;
+			unsigned int Reserved1           : 1;
+			unsigned int PoweredCable        : 1;
+			unsigned int PoweredCableNoDfp   : 1;
 		} RegisterContent;
 	};
 } UC120_REG2, * PUC120_REG2;

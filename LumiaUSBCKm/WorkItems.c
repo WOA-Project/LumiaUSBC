@@ -49,8 +49,14 @@ void Uc120InterruptWorkItem(
 		goto exit;
 	}
 
-	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg2: 0x%x; Charger1 = %d, Charger2 = %d, Dongle = %d",
-		Reg2.RegisterData, Reg2.RegisterContent.Charger1, Reg2.RegisterContent.Charger2, Reg2.RegisterContent.Dongle);
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Reg2: 0x%x; Charger1 = %d, Charger2 = %d, Dongle = %d, PoweredCableWithUfp = %d, PoweredCable = %d, PoweredCableNoDfp = %d",
+		Reg2.RegisterData,
+		Reg2.RegisterContent.Charger1,
+		Reg2.RegisterContent.Charger2,
+		Reg2.RegisterContent.Dongle,
+		Reg2.RegisterContent.PoweredCableWithUfp,
+		Reg2.RegisterContent.PoweredCable,
+		Reg2.RegisterContent.PoweredCableNoDfp);
 
 	// Read register 7
 	Status = ReadRegister(ctx, 7, &Reg7, 1);
@@ -106,14 +112,17 @@ void Uc120InterruptWorkItem(
 	}
 
 	// Handle changes now
-	if ((Reg2.RegisterContent.Charger1 || Reg2.RegisterContent.Charger2) && Reg2.RegisterContent.Dongle) {
+	if (((Reg2.RegisterContent.Charger1 || Reg2.RegisterContent.Charger2) && Reg2.RegisterContent.Dongle) || Reg2.RegisterContent.PoweredCableWithUfp) {
 		UcmPartnerType = UcmTypeCPartnerPoweredCableWithUfp;
 	}
-	else if (Reg2.RegisterContent.Charger1 || Reg2.RegisterContent.Charger2) {
+	else if (Reg2.RegisterContent.Charger1 || Reg2.RegisterContent.Charger2 || (Reg2.RegisterContent.PoweredCable && Reg2.RegisterContent.PoweredCableNoDfp)) {
 		UcmPartnerType = UcmTypeCPartnerPoweredCableNoUfp;
 	}
 	else if (Reg2.RegisterContent.Dongle) {
 		UcmPartnerType = UcmTypeCPartnerUfp;
+	}
+	else if (Reg2.RegisterContent.PoweredCable) {
+		UcmPartnerType = UcmTypeCPartnerDfp;
 	}
 
 	Status = USBC_ChangeRole(ctx, UcmPartnerType, Reg7.RegisterContent.Polarity);
