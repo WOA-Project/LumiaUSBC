@@ -569,12 +569,12 @@ Exit:
 
 NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
 {
-  NTSTATUS      status = STATUS_SUCCESS;
-  ULONG         input[8], output[6];
-  LARGE_INTEGER delay;
+  NTSTATUS      Status = STATUS_SUCCESS;
+  ULONG         Input[8], Output[6];
+  LARGE_INTEGER Delay;
 
-  PO_FX_DEVICE               poFxDevice;
-  PO_FX_COMPONENT_IDLE_STATE idleState;
+  PO_FX_DEVICE               PoFxDevice;
+  PO_FX_COMPONENT_IDLE_STATE IdleState;
 
   UNICODE_STRING            CalibrationFileString;
   OBJECT_ATTRIBUTES         CalibrationFileObjectAttribute;
@@ -588,48 +588,47 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
                                     0x0A, 0x7A, 0x2F, 0x5C, 0x9B};
 
   LONGLONG CalibrationFileSize = 0;
-
-  BOOLEAN SkipCalibration = FALSE;
+  BOOLEAN  SkipCalibration     = FALSE;
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
       "LumiaUSBCSelfManagedIoInit Entry");
 
-  PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
+  PDEVICE_CONTEXT pDeviceContext = DeviceGetContext(Device);
 
-  memset(&poFxDevice, 0, sizeof(poFxDevice));
-  memset(&idleState, 0, sizeof(idleState));
-  poFxDevice.Version                      = PO_FX_VERSION_V1;
-  poFxDevice.ComponentCount               = 1;
-  poFxDevice.Components[0].IdleStateCount = 1;
-  poFxDevice.Components[0].IdleStates     = &idleState;
-  poFxDevice.DeviceContext                = devCtx;
-  idleState.NominalPower                  = PO_FX_UNKNOWN_POWER;
+  memset(&PoFxDevice, 0, sizeof(PoFxDevice));
+  memset(&IdleState, 0, sizeof(IdleState));
+  PoFxDevice.Version                      = PO_FX_VERSION_V1;
+  PoFxDevice.ComponentCount               = 1;
+  PoFxDevice.Components[0].IdleStateCount = 1;
+  PoFxDevice.Components[0].IdleStates     = &IdleState;
+  PoFxDevice.DeviceContext                = pDeviceContext;
+  IdleState.NominalPower                  = PO_FX_UNKNOWN_POWER;
 
-  status = PoFxRegisterDevice(
-      WdfDeviceWdmGetPhysicalDevice(Device), &poFxDevice, &devCtx->PoHandle);
-  if (!NT_SUCCESS(status)) {
+  Status = PoFxRegisterDevice(
+      WdfDeviceWdmGetPhysicalDevice(Device), &PoFxDevice,
+      &pDeviceContext->PoHandle);
+  if (!NT_SUCCESS(Status)) {
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxRegisterDevice failed 0x%x",
-        status);
+        Status);
     goto Exit;
   }
 
-  PoFxActivateComponent(devCtx->PoHandle, 0, PO_FX_FLAG_BLOCKING);
-
-  PoFxStartDevicePowerManagement(devCtx->PoHandle);
+  PoFxActivateComponent(pDeviceContext->PoHandle, 0, PO_FX_FLAG_BLOCKING);
+  PoFxStartDevicePowerManagement(pDeviceContext->PoHandle);
 
   // Tell PEP to turn on the clock
-  memset(input, 0, sizeof(input));
-  input[0] = 2;
-  input[7] = 2;
-  status   = PoFxPowerControl(
-      devCtx->PoHandle, &PowerControlGuid, &input, sizeof(input), &output,
-      sizeof(output), NULL);
-  if (!NT_SUCCESS(status)) {
+  memset(Input, 0, sizeof(Input));
+  Input[0] = 2;
+  Input[7] = 2;
+  Status   = PoFxPowerControl(
+      pDeviceContext->PoHandle, &PowerControlGuid, &Input, sizeof(Input),
+      &Output, sizeof(Output), NULL);
+  if (!NT_SUCCESS(Status)) {
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxPowerControl failed 0x%x",
-        status);
+        Status);
     goto Exit;
   }
 
@@ -642,37 +641,37 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
 
   // Should not happen
   if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
-    status = STATUS_INVALID_DEVICE_STATE;
+    Status = STATUS_INVALID_DEVICE_STATE;
     goto Exit;
   }
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "acquire calibration file handle");
-  status = ZwCreateFile(
+  Status = ZwCreateFile(
       &hCalibrationFile, GENERIC_READ, &CalibrationFileObjectAttribute,
       &CalibrationIoStatusBlock, NULL, FILE_ATTRIBUTE_NORMAL, 0, FILE_OPEN,
       FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
 
-  if (!NT_SUCCESS(status)) {
+  if (!NT_SUCCESS(Status)) {
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
         "failed to open calibration file 0x%x, skipping calibration. Is this a "
         "FUSBC device?",
-        status);
-    status          = STATUS_SUCCESS;
+        Status);
+    Status          = STATUS_SUCCESS;
     SkipCalibration = TRUE;
   }
 
   if (!SkipCalibration) {
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "stat calibration file");
-    status = ZwQueryInformationFile(
+    Status = ZwQueryInformationFile(
         hCalibrationFile, &CalibrationIoStatusBlock, &CalibrationFileInfo,
         sizeof(CalibrationFileInfo), FileStandardInformation);
 
-    if (!NT_SUCCESS(status)) {
+    if (!NT_SUCCESS(Status)) {
       TraceEvents(
           TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "failed to stat calibration file 0x%x", status);
+          "failed to stat calibration file 0x%x", Status);
       ZwClose(hCalibrationFile);
       goto Exit;
     }
@@ -686,25 +685,51 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
     RtlZeroMemory(CalibrationBlob, sizeof(CalibrationBlob));
     CalibrationFileByteOffset.LowPart  = 0;
     CalibrationFileByteOffset.HighPart = 0;
-    status                             = ZwReadFile(
+    Status                             = ZwReadFile(
         hCalibrationFile, NULL, NULL, NULL, &CalibrationIoStatusBlock,
         CalibrationBlob, UC120_CALIBRATIONFILE_SIZE, &CalibrationFileByteOffset,
         NULL);
 
     ZwClose(hCalibrationFile);
-    if (!NT_SUCCESS(status)) {
+    if (!NT_SUCCESS(Status)) {
       TraceEvents(
           TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "failed to read calibration file 0x%x", status);
+          "failed to read calibration file 0x%x", Status);
       goto Exit;
     }
   }
 
-  status = UC120_D0Entry(devCtx);
-  if (!NT_SUCCESS(status)) {
+  // UC120 init sequence
+  pDeviceContext->Register4 |= 6;
+  Status = WriteRegister(
+      pDeviceContext, 4, &pDeviceContext->Register4,
+      sizeof(pDeviceContext->Register4));
+  if (!NT_SUCCESS(Status)) {
     TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_D0Entry failed 0x%x",
-        status);
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "Initseq Write Register 4 failed 0x%x", Status);
+    goto Exit;
+  }
+
+  pDeviceContext->Register5 = 0x88;
+  Status                    = WriteRegister(
+      pDeviceContext, 5, &pDeviceContext->Register5,
+      sizeof(pDeviceContext->Register5));
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "Initseq Write Register 5 failed 0x%x", Status);
+    goto Exit;
+  }
+
+  pDeviceContext->Register13 = pDeviceContext->Register13 & 0xFC | 2;
+  Status                     = WriteRegister(
+      pDeviceContext, 13, &pDeviceContext->Register13,
+      sizeof(pDeviceContext->Register13));
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "Initseq Write Register 13 failed 0x%x", Status);
     goto Exit;
   }
 
@@ -712,36 +737,40 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
     // Initialize the UC120 accordingly
     if (CalibrationFileSize == 11) {
       // Skip the first byte
-      status = UC120_UploadCalibrationData(devCtx, &CalibrationBlob[1], 10);
+      Status =
+          UC120_UploadCalibrationData(pDeviceContext, &CalibrationBlob[1], 10);
     }
     else if (CalibrationFileSize == 8) {
       // No skip
-      status = UC120_UploadCalibrationData(devCtx, CalibrationBlob, 8);
+      Status = UC120_UploadCalibrationData(pDeviceContext, CalibrationBlob, 8);
     }
     else {
       // Not recognized, use default
       TraceEvents(
           TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
           "Unknown calibration data, fallback to the default");
-      status = UC120_UploadCalibrationData(
-          devCtx, DefaultCalibrationBlob, sizeof(DefaultCalibrationBlob));
+      Status = UC120_UploadCalibrationData(
+          pDeviceContext, DefaultCalibrationBlob,
+          sizeof(DefaultCalibrationBlob));
     }
 
-    if (!NT_SUCCESS(status)) {
+    if (!NT_SUCCESS(Status)) {
       TraceEvents(
           TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "UC120_UploadCalibrationData failed 0x%x", status);
+          "UC120_UploadCalibrationData failed 0x%x", Status);
       goto Exit;
     }
+
+    // TODO: Write Unk1 that have not yet understood
   }
 
-  delay.QuadPart = -2000000;
-  KeDelayExecutionThread(UserMode, TRUE, &delay);
+  Delay.QuadPart = -2000000;
+  KeDelayExecutionThread(UserMode, TRUE, &Delay);
 
 Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSelfManagedIoInit Exit");
-  return status;
+  return Status;
 }
 
 NTSTATUS
