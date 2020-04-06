@@ -19,47 +19,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="ReadMe.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <Inf Include="LumiaUSBCKm.inf">
       <Filter>Driver Files</Filter>
     </Inf>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Device.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Driver.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Public.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Trace.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="SPI.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GPIO.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="UC120.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Registry.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="WorkItems.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="USBRole.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="UC120Registers.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Device.c">
@@ -86,5 +48,11 @@
     <ClCompile Include="USBRole.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Interrupt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include=".clang-format" />
   </ItemGroup>
 </Project>
