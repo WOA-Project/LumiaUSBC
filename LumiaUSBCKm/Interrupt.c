@@ -13,6 +13,7 @@
 #include <UC120.h>
 #include <Uc120GPIO.h>
 #include <WorkItems.h>
+#include <USBRole.h>
 
 #include "Interrupt.tmh"
 
@@ -45,18 +46,45 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
   WriteRegister(
       pDeviceContext, 2, &pDeviceContext->Register2,
       sizeof(pDeviceContext->Register2));
-  WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
 
   // Trace
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DEVICE,
-      "UC120 EOI: PdStateMachineIndex = %u, IncomingPdHandled = %!bool!, PowerSource = %u, "
+      "UC120 EOI: PdStateMachineIndex = %u, IncomingPdHandled = %!bool!, "
+      "PowerSource = %u, "
       "State3 = %u, State9 = %u, Polarity = %u, IncomingPdMessageState = %u",
       pDeviceContext->PdStateMachineIndex, pDeviceContext->IncomingPdHandled,
       pDeviceContext->PowerSource, pDeviceContext->State3,
       pDeviceContext->State9, pDeviceContext->Polarity,
       pDeviceContext->IncomingPdMessageState);
 
+  // Change state for charging (at least now)
+  if (pDeviceContext->PowerSource == 1) {
+    if (pDeviceContext->Connected) {
+      Status = USBC_Detach(pDeviceContext);
+    }
+
+    Status = USBC_ChangeRole(
+        pDeviceContext, UcmTypeCPartnerPoweredCableNoUfp,
+        pDeviceContext->Polarity - 1);
+    if (!NT_SUCCESS(Status)) {
+      TraceEvents(
+          TRACE_LEVEL_ERROR, TRACE_INTERRUPT,
+          "Failed to set USB Role: %!STATUS!", Status);
+
+      goto Exit;
+    }
+    else {
+      TraceEvents(
+          TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT,
+          "Charging status is set");
+    }
+
+    pDeviceContext->Connected = TRUE;
+  }
+
+Exit:
+  WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
   return TRUE;
 }
 

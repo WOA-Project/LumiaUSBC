@@ -22,9 +22,6 @@ WriteRegister(PDEVICE_CONTEXT pContext, int Register, PVOID Value, ULONG Length)
 NTSTATUS ReadRegisterFullDuplex(
     PDEVICE_CONTEXT pContext, int Register, PVOID Value, ULONG Length)
 {
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> ReadRegisterFullDuplex");
-
   // Params
   NTSTATUS status  = STATUS_SUCCESS;
   UCHAR    command = (UCHAR)(Register << 3);
@@ -38,6 +35,7 @@ NTSTATUS ReadRegisterFullDuplex(
   UCHAR *   pSpbTransferInputMemory    = NULL;
 
   WDF_MEMORY_DESCRIPTOR SpbTransferListMemoryDescriptor;
+  WDF_REQUEST_SEND_OPTIONS RequestOptions;
 
   // One register write and read
   SPB_TRANSFER_LIST_AND_ENTRIES(2) Sequence;
@@ -92,9 +90,13 @@ NTSTATUS ReadRegisterFullDuplex(
   WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
       &SpbTransferListMemoryDescriptor, (PVOID)&Sequence, sizeof(Sequence));
 
+  WDF_REQUEST_SEND_OPTIONS_INIT(
+      &RequestOptions, WDF_REQUEST_SEND_OPTION_TIMEOUT);
+  RequestOptions.Timeout = WDF_REL_TIMEOUT_IN_MS(561);
+
   status = WdfIoTargetSendIoctlSynchronously(
       pContext->Spi, NULL, IOCTL_SPB_FULL_DUPLEX,
-      &SpbTransferListMemoryDescriptor, NULL, NULL, NULL);
+      &SpbTransferListMemoryDescriptor, NULL, &RequestOptions, NULL);
 
   if (!NT_SUCCESS(status)) {
     TraceEvents(
@@ -118,24 +120,20 @@ NTSTATUS ReadRegisterFullDuplex(
 
 exit:
   WdfObjectReleaseLock(pContext->Device);
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- ReadRegisterFullDuplex");
   return status;
 }
 
 NTSTATUS WriteRegisterFullDuplex(
     PDEVICE_CONTEXT pContext, int Register, PVOID Value, ULONG Length)
 {
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> WriteRegisterFullDuplex");
-
   NTSTATUS status  = STATUS_SUCCESS;
   UCHAR    Command = (unsigned char)((Register << 3) | 1);
 
-  WDFMEMORY             SpbTransferOutputMemory;
-  WDF_MEMORY_DESCRIPTOR SpbTransferOutputMemoryDescriptor;
-  ULONG                 SpbTransferOutputMemorySize = 1 + Length;
-  UCHAR *               pSpbTransferOutputMemory    = NULL;
+  WDFMEMORY                SpbTransferOutputMemory;
+  WDF_MEMORY_DESCRIPTOR    SpbTransferOutputMemoryDescriptor;
+  ULONG                    SpbTransferOutputMemorySize = 1 + Length;
+  UCHAR *                  pSpbTransferOutputMemory    = NULL;
+  WDF_REQUEST_SEND_OPTIONS RequestOptions;
 
   // Take Lock
   WdfObjectAcquireLock(pContext->Device);
@@ -159,9 +157,20 @@ NTSTATUS WriteRegisterFullDuplex(
   WDF_MEMORY_DESCRIPTOR_INIT_HANDLE(
       &SpbTransferOutputMemoryDescriptor, SpbTransferOutputMemory, 0);
 
+  if (Length == 1) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "WriteRegisterFullDuplex: register 0x%x value 0x%x", Register,
+        (UCHAR) * ((UCHAR *)Value));
+  }
+
+  WDF_REQUEST_SEND_OPTIONS_INIT(
+      &RequestOptions, WDF_REQUEST_SEND_OPTION_TIMEOUT);
+  RequestOptions.Timeout = WDF_REL_TIMEOUT_IN_MS(561);
+
   status = WdfIoTargetSendWriteSynchronously(
-      pContext->Spi, NULL, &SpbTransferOutputMemoryDescriptor, NULL, NULL,
-      NULL);
+      pContext->Spi, NULL, &SpbTransferOutputMemoryDescriptor, NULL,
+      &RequestOptions, NULL);
 
   if (!NT_SUCCESS(status)) {
     TraceEvents(
@@ -173,7 +182,5 @@ NTSTATUS WriteRegisterFullDuplex(
 
 exit:
   WdfObjectReleaseLock(pContext->Device);
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- WriteRegisterFullDuplex");
   return status;
 }

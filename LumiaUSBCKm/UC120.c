@@ -247,6 +247,31 @@ exit:
   return Status;
 }
 
+NTSTATUS UC120_SetDataRole(PDEVICE_CONTEXT DeviceContext, BOOLEAN DataRole)
+{
+  NTSTATUS Status;
+
+  Status = ReadRegister(
+      DeviceContext, 5, &DeviceContext->Register5,
+      sizeof(DeviceContext->Register5));
+
+  if (!NT_SUCCESS(Status)) {
+    goto exit;
+  }
+
+  DeviceContext->Register5 ^= (DeviceContext->Register5 ^ 4 * DataRole) & 4;
+  Status = WriteRegister(
+      DeviceContext, 5, &DeviceContext->Register5,
+      sizeof(DeviceContext->Register5));
+
+  if (!NT_SUCCESS(Status)) {
+    goto exit;
+  }
+
+exit:
+  return Status;
+}
+
 NTSTATUS UC120_ToggleReg4Bit1(PDEVICE_CONTEXT DeviceContext, BOOLEAN PowerRole)
 {
   NTSTATUS Status;

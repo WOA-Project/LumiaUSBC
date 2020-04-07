@@ -21,7 +21,6 @@
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, LumiaUSBCKmCreateDevice)
 #pragma alloc_text(PAGE, LumiaUSBCDevicePrepareHardware)
-#pragma alloc_text(PAGE, LumiaUSBCSetDataRole)
 #endif
 
 NTSTATUS OpenIOTarget(
@@ -376,71 +375,85 @@ void LumiaUSBCCloseResources(PDEVICE_CONTEXT ctx)
 }
 
 NTSTATUS
-LumiaUSBCDeviceD0Exit(WDFDEVICE Device, WDF_POWER_DEVICE_STATE TargetState)
+LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
 {
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Exit Entry");
+  WDF_OBJECT_ATTRIBUTES        DeviceAttributes;
+  WDF_OBJECT_ATTRIBUTES        WaitLockAttrib;
+  WDF_PNPPOWER_EVENT_CALLBACKS PnpPowerCallbacks;
+  PDEVICE_CONTEXT              DeviceContext;
+  WDFDEVICE                    Device;
+  UCM_MANAGER_CONFIG           UcmConfig;
+  NTSTATUS                     Status;
 
-  PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
-
-  switch (TargetState) {
-  case WdfPowerDeviceInvalid: {
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceInvalid");
-    break;
-  }
-  case WdfPowerDeviceD0: {
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD0");
-    break;
-  }
-  case WdfPowerDeviceD1: {
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD1");
-    break;
-  }
-  case WdfPowerDeviceD2: {
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD2");
-    break;
-  }
-  case WdfPowerDeviceD3: {
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD3");
-    break;
-  }
-  case WdfPowerDeviceD3Final: {
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD3Final");
-    break;
-  }
-  case WdfPowerDevicePrepareForHibernation: {
-    TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "WdfPowerDevicePrepareForHibernation");
-    break;
-  }
-  case WdfPowerDeviceMaximum: {
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceMaximum");
-    break;
-  }
-  }
-
-  LumiaUSBCCloseResources(devCtx);
+  PAGED_CODE();
 
   TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Exit Exit");
-  return STATUS_SUCCESS;
-}
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCKmCreateDevice Entry");
 
-NTSTATUS LumiaUSBCDeviceReleaseHardware(
-    WDFDEVICE Device, WDFCMRESLIST ResourcesTranslated)
-{
+  WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&PnpPowerCallbacks);
+  PnpPowerCallbacks.EvtDevicePrepareHardware = LumiaUSBCDevicePrepareHardware;
+  PnpPowerCallbacks.EvtDeviceReleaseHardware = LumiaUSBCDeviceReleaseHardware;
+  PnpPowerCallbacks.EvtDeviceD0Entry         = LumiaUSBCDeviceD0Entry;
+  PnpPowerCallbacks.EvtDeviceD0Exit          = LumiaUSBCDeviceD0Exit;
+  WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &PnpPowerCallbacks);
+
+  WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&DeviceAttributes, DEVICE_CONTEXT);
+
+  Status = WdfDeviceCreate(&DeviceInit, &DeviceAttributes, &Device);
+
+  if (NT_SUCCESS(Status)) {
+    DeviceContext = DeviceGetContext(Device);
+
+    //
+    // Initialize the context.
+    //
+    DeviceContext->Device    = Device;
+    DeviceContext->Connector = NULL;
+
+    WDF_OBJECT_ATTRIBUTES_INIT(&WaitLockAttrib);
+    WaitLockAttrib.ExecutionLevel = WdfExecutionLevelInheritFromParent;
+    WaitLockAttrib.SynchronizationScope =
+        WdfSynchronizationScopeInheritFromParent;
+    WaitLockAttrib.ParentObject = Device;
+    Status = WdfWaitLockCreate(&WaitLockAttrib, &DeviceContext->DeviceWaitLock);
+    if (!NT_SUCCESS(Status)) {
+      TraceEvents(
+          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+          "LumiaUSBCKmCreateDevice failed to WdfWaitLockCreate: %!STATUS!\n",
+          Status);
+      goto Exit;
+    }
+
+    UCM_MANAGER_CONFIG_INIT(&UcmConfig);
+    Status = UcmInitializeDevice(Device, &UcmConfig);
+    if (!NT_SUCCESS(Status)) {
+      TraceEvents(
+          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
+      goto Exit;
+    }
+
+    WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS idleSettings;
+
+    WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS_INIT(
+        &idleSettings, IdleCannotWakeFromS0);
+    idleSettings.IdleTimeoutType = DriverManagedIdleTimeout;
+    idleSettings.Enabled         = WdfFalse;
+
+    Status = WdfDeviceAssignS0IdleSettings(Device, &idleSettings);
+    if (!NT_SUCCESS(Status)) {
+      TraceEvents(
+          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
+      goto Exit;
+    }
+  }
+
+Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-      "LumiaUSBCDeviceReleaseHardware Entry");
-
-  UNREFERENCED_PARAMETER((Device, ResourcesTranslated));
-
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-      "LumiaUSBCDeviceReleaseHardware Exit");
-
-  return STATUS_SUCCESS;
+      "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
+  return Status;
 }
 
 NTSTATUS
@@ -467,6 +480,7 @@ LumiaUSBCDevicePrepareHardware(
   pDeviceContext->IncomingPdHandled   = TRUE;
   pDeviceContext->Polarity            = 0;
   pDeviceContext->PowerSource         = 2;
+  pDeviceContext->Connected           = FALSE;
 
   Status = LumiaUSBCProbeResources(
       pDeviceContext, ResourcesTranslated, ResourcesRaw);
@@ -478,6 +492,47 @@ LumiaUSBCDevicePrepareHardware(
   }
 
   if (pDeviceContext->Connector) {
+    goto Exit;
+  }
+
+  // Initialize PEP
+  PO_FX_DEVICE               PoFxDevice;
+  PO_FX_COMPONENT_IDLE_STATE IdleState;
+
+  memset(&PoFxDevice, 0, sizeof(PoFxDevice));
+  memset(&IdleState, 0, sizeof(IdleState));
+  PoFxDevice.Version                      = PO_FX_VERSION_V1;
+  PoFxDevice.ComponentCount               = 1;
+  PoFxDevice.Components[0].IdleStateCount = 1;
+  PoFxDevice.Components[0].IdleStates     = &IdleState;
+  PoFxDevice.DeviceContext                = pDeviceContext;
+  IdleState.NominalPower                  = PO_FX_UNKNOWN_POWER;
+
+  Status = PoFxRegisterDevice(
+      WdfDeviceWdmGetPhysicalDevice(Device), &PoFxDevice,
+      &pDeviceContext->PoHandle);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxRegisterDevice failed 0x%x",
+        Status);
+    goto Exit;
+  }
+
+  PoFxActivateComponent(pDeviceContext->PoHandle, 0, PO_FX_FLAG_BLOCKING);
+  PoFxStartDevicePowerManagement(pDeviceContext->PoHandle);
+
+  // Tell PEP to turn on the clock
+  ULONG Input[8], Output[6];
+  memset(Input, 0, sizeof(Input));
+  Input[0] = 2;
+  Input[7] = 2;
+  Status   = PoFxPowerControl(
+      pDeviceContext->PoHandle, &PowerControlGuid, &Input, sizeof(Input),
+      &Output, sizeof(Output), NULL);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxPowerControl failed 0x%x",
+        Status);
     goto Exit;
   }
 
@@ -545,47 +600,12 @@ Exit:
 NTSTATUS
 LumiaUSBCDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
 {
-  NTSTATUS status = STATUS_SUCCESS;
   UNREFERENCED_PARAMETER(PreviousState);
 
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Entry");
+  NTSTATUS        Status         = STATUS_SUCCESS;
+  PDEVICE_CONTEXT pDeviceContext = DeviceGetContext(Device);
 
-  PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
-
-  status = LumiaUSBCOpenResources(devCtx);
-  if (!NT_SUCCESS(status)) {
-    TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "LumiaUSBCOpenResources failed 0x%x\n", status);
-    goto Exit;
-  }
-
-  unsigned char value = (unsigned char)0;
-  SetGPIO(devCtx, devCtx->PolGpio, &value);
-
-  value = (unsigned char)0;
-  SetGPIO(
-      devCtx, devCtx->AmselGpio,
-      &value); // high = HDMI only, medium (unsupported) = USB only, low = both
-
-  value = (unsigned char)1;
-  SetGPIO(devCtx, devCtx->EnGpio, &value);
-
-Exit:
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Exit");
-  return status;
-}
-
-NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
-{
-  NTSTATUS      Status = STATUS_SUCCESS;
-  ULONG         Input[8], Output[6];
   LARGE_INTEGER Delay;
-
-  PO_FX_DEVICE               PoFxDevice;
-  PO_FX_COMPONENT_IDLE_STATE IdleState;
 
   UNICODE_STRING            CalibrationFileString;
   OBJECT_ATTRIBUTES         CalibrationFileObjectAttribute;
@@ -602,46 +622,24 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
   BOOLEAN  SkipCalibration     = FALSE;
 
   TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-      "LumiaUSBCSelfManagedIoInit Entry");
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Entry");
 
-  PDEVICE_CONTEXT pDeviceContext = DeviceGetContext(Device);
-
-  memset(&PoFxDevice, 0, sizeof(PoFxDevice));
-  memset(&IdleState, 0, sizeof(IdleState));
-  PoFxDevice.Version                      = PO_FX_VERSION_V1;
-  PoFxDevice.ComponentCount               = 1;
-  PoFxDevice.Components[0].IdleStateCount = 1;
-  PoFxDevice.Components[0].IdleStates     = &IdleState;
-  PoFxDevice.DeviceContext                = pDeviceContext;
-  IdleState.NominalPower                  = PO_FX_UNKNOWN_POWER;
-
-  Status = PoFxRegisterDevice(
-      WdfDeviceWdmGetPhysicalDevice(Device), &PoFxDevice,
-      &pDeviceContext->PoHandle);
+  Status = LumiaUSBCOpenResources(pDeviceContext);
   if (!NT_SUCCESS(Status)) {
     TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxRegisterDevice failed 0x%x",
-        Status);
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "LumiaUSBCOpenResources failed 0x%x\n", Status);
     goto Exit;
   }
 
-  PoFxActivateComponent(pDeviceContext->PoHandle, 0, PO_FX_FLAG_BLOCKING);
-  PoFxStartDevicePowerManagement(pDeviceContext->PoHandle);
+  // high = HDMI only, medium (unsupported) = USB only, low = both
+  unsigned char value = (unsigned char)0;
+  SetGPIO(pDeviceContext, pDeviceContext->PolGpio, &value);
+  value = (unsigned char)0;
+  SetGPIO(pDeviceContext, pDeviceContext->AmselGpio, &value);
 
-  // Tell PEP to turn on the clock
-  memset(Input, 0, sizeof(Input));
-  Input[0] = 2;
-  Input[7] = 2;
-  Status   = PoFxPowerControl(
-      pDeviceContext->PoHandle, &PowerControlGuid, &Input, sizeof(Input),
-      &Output, sizeof(Output), NULL);
-  if (!NT_SUCCESS(Status)) {
-    TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "PoFxPowerControl failed 0x%x",
-        Status);
-    goto Exit;
-  }
+  value = (unsigned char)1;
+  SetGPIO(pDeviceContext, pDeviceContext->EnGpio, &value);
 
   // Read calibration file
   RtlInitUnicodeString(
@@ -744,70 +742,6 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
     goto Exit;
   }
 
-  pDeviceContext->Register2 = 0xff;
-  Status                    = WriteRegister(
-      pDeviceContext, 2, &pDeviceContext->Register2,
-      sizeof(pDeviceContext->Register2));
-  if (!NT_SUCCESS(Status)) {
-    TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "Initseq Write Register 2 failed 0x%x", Status);
-    goto Exit;
-  }
-
-  pDeviceContext->Register3 = 0xff;
-  Status                    = WriteRegister(
-      pDeviceContext, 3, &pDeviceContext->Register3,
-      sizeof(pDeviceContext->Register3));
-  if (!NT_SUCCESS(Status)) {
-    TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "Initseq Write Register 3 failed 0x%x", Status);
-    goto Exit;
-  }
-
-  pDeviceContext->Register4 = 0x7;
-  Status                    = WriteRegister(
-      pDeviceContext, 4, &pDeviceContext->Register4,
-      sizeof(pDeviceContext->Register4));
-  if (!NT_SUCCESS(Status)) {
-    TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "Initseq Write Register 4 failed 0x%x", Status);
-    goto Exit;
-  }
-
-  pDeviceContext->Register5 = 0x8;
-  Status                    = WriteRegister(
-      pDeviceContext, 5, &pDeviceContext->Register5,
-      sizeof(pDeviceContext->Register5));
-  if (!NT_SUCCESS(Status)) {
-    TraceEvents(
-        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "Initseq Write Register 5 failed 0x%x", Status);
-    goto Exit;
-  }
-
-  Status = ReadRegister(
-      pDeviceContext, 2, &pDeviceContext->Register2,
-      sizeof(pDeviceContext->Register2));
-  if (!NT_SUCCESS(Status)) {
-    TraceEvents(
-        TRACE_LEVEL_ERROR, TRACE_DEVICE, "ReadRegister 2 failed with %!STATUS!",
-        Status);
-    goto Exit;
-  }
-
-  Status = ReadRegister(
-      pDeviceContext, 7, &pDeviceContext->Register7,
-      sizeof(pDeviceContext->Register7));
-  if (!NT_SUCCESS(Status)) {
-    TraceEvents(
-        TRACE_LEVEL_ERROR, TRACE_DEVICE, "ReadRegister 7 failed with %!STATUS!",
-        Status);
-    goto Exit;
-  }
-
   if (!SkipCalibration) {
     // Initialize the UC120 accordingly
     if (CalibrationFileSize == 11) {
@@ -845,89 +779,74 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
 
 Exit:
   TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSelfManagedIoInit Exit");
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Exit");
   return Status;
 }
 
 NTSTATUS
-LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
+LumiaUSBCDeviceD0Exit(WDFDEVICE Device, WDF_POWER_DEVICE_STATE TargetState)
 {
-  WDF_OBJECT_ATTRIBUTES        DeviceAttributes;
-  WDF_OBJECT_ATTRIBUTES        WaitLockAttrib;
-  WDF_PNPPOWER_EVENT_CALLBACKS PnpPowerCallbacks;
-  PDEVICE_CONTEXT              DeviceContext;
-  WDFDEVICE                    Device;
-  UCM_MANAGER_CONFIG           UcmConfig;
-  NTSTATUS                     Status;
-
-  PAGED_CODE();
-
   TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCKmCreateDevice Entry");
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Exit Entry");
 
-  WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&PnpPowerCallbacks);
-  PnpPowerCallbacks.EvtDevicePrepareHardware   = LumiaUSBCDevicePrepareHardware;
-  PnpPowerCallbacks.EvtDeviceReleaseHardware   = LumiaUSBCDeviceReleaseHardware;
-  PnpPowerCallbacks.EvtDeviceD0Entry           = LumiaUSBCDeviceD0Entry;
-  PnpPowerCallbacks.EvtDeviceD0Exit            = LumiaUSBCDeviceD0Exit;
-  PnpPowerCallbacks.EvtDeviceSelfManagedIoInit = LumiaUSBCSelfManagedIoInit;
-  WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &PnpPowerCallbacks);
+  PDEVICE_CONTEXT devCtx = DeviceGetContext(Device);
 
-  WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&DeviceAttributes, DEVICE_CONTEXT);
-
-  Status = WdfDeviceCreate(&DeviceInit, &DeviceAttributes, &Device);
-
-  if (NT_SUCCESS(Status)) {
-    DeviceContext = DeviceGetContext(Device);
-
-    //
-    // Initialize the context.
-    //
-    DeviceContext->Device    = Device;
-    DeviceContext->Connector = NULL;
-
-    WDF_OBJECT_ATTRIBUTES_INIT(&WaitLockAttrib);
-    WaitLockAttrib.ExecutionLevel = WdfExecutionLevelInheritFromParent;
-    WaitLockAttrib.SynchronizationScope =
-        WdfSynchronizationScopeInheritFromParent;
-    WaitLockAttrib.ParentObject = Device;
-    Status = WdfWaitLockCreate(&WaitLockAttrib, &DeviceContext->DeviceWaitLock);
-    if (!NT_SUCCESS(Status)) {
-      TraceEvents(
-          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice failed to WdfWaitLockCreate: %!STATUS!\n",
-          Status);
-      goto Exit;
-    }
-
-    UCM_MANAGER_CONFIG_INIT(&UcmConfig);
-    Status = UcmInitializeDevice(Device, &UcmConfig);
-    if (!NT_SUCCESS(Status)) {
-      TraceEvents(
-          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
-      goto Exit;
-    }
-
-    WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS idleSettings;
-
-    WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS_INIT(
-        &idleSettings, IdleCannotWakeFromS0);
-    idleSettings.IdleTimeoutType = DriverManagedIdleTimeout;
-    idleSettings.Enabled         = WdfFalse;
-
-    Status = WdfDeviceAssignS0IdleSettings(Device, &idleSettings);
-    if (!NT_SUCCESS(Status)) {
-      TraceEvents(
-          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
-      goto Exit;
-    }
+  switch (TargetState) {
+  case WdfPowerDeviceInvalid: {
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceInvalid");
+    break;
+  }
+  case WdfPowerDeviceD0: {
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD0");
+    break;
+  }
+  case WdfPowerDeviceD1: {
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD1");
+    break;
+  }
+  case WdfPowerDeviceD2: {
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD2");
+    break;
+  }
+  case WdfPowerDeviceD3: {
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD3");
+    break;
+  }
+  case WdfPowerDeviceD3Final: {
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceD3Final");
+    break;
+  }
+  case WdfPowerDevicePrepareForHibernation: {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "WdfPowerDevicePrepareForHibernation");
+    break;
+  }
+  case WdfPowerDeviceMaximum: {
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "WdfPowerDeviceMaximum");
+    break;
+  }
   }
 
-Exit:
+  LumiaUSBCCloseResources(devCtx);
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Exit Exit");
+  return STATUS_SUCCESS;
+}
+
+NTSTATUS LumiaUSBCDeviceReleaseHardware(
+    WDFDEVICE Device, WDFCMRESLIST ResourcesTranslated)
+{
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-      "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
-  return Status;
+      "LumiaUSBCDeviceReleaseHardware Entry");
+
+  UNREFERENCED_PARAMETER((Device, ResourcesTranslated));
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+      "LumiaUSBCDeviceReleaseHardware Exit");
+
+  return STATUS_SUCCESS;
 }
