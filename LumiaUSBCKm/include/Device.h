@@ -51,10 +51,12 @@ typedef struct _DEVICE_CONTEXT {
 
   USHORT  PdStateMachineIndex;
   UCHAR   State3;
+  UCHAR   State9;
   BOOLEAN IncomingPdHandled;
   UCHAR   PowerSource;
   UCHAR   Polarity;
   UCHAR   IncomingPdMessageState;
+  KEVENT  PdEvent;
 
   UCHAR Register0;
   UCHAR Register1;

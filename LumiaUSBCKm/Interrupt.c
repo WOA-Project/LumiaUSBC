@@ -24,10 +24,12 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
   NTSTATUS        Status;
   PDEVICE_CONTEXT pDeviceContext;
 
-  Device = WdfInterruptGetDevice(Interrupt);
+  Device         = WdfInterruptGetDevice(Interrupt);
   pDeviceContext = DeviceGetContext(Device);
 
-  WdfWaitLockAcquire(pDeviceContext->DeviceWaitLock, 0);
+  Status = WdfWaitLockAcquire(pDeviceContext->DeviceWaitLock, 0);
+  ASSERT(NT_SUCCESS(Status));
+
   Status = ReadRegister(
       pDeviceContext, 2, &pDeviceContext->Register2,
       sizeof(pDeviceContext->Register2));
@@ -72,14 +74,14 @@ BOOLEAN EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
   NTSTATUS Status = STATUS_SUCCESS;
   UCHAR    Reg5   = 0;
 
-  WDFDEVICE Device = WdfInterruptGetDevice(Interrupt);
+  WDFDEVICE       Device         = WdfInterruptGetDevice(Interrupt);
   PDEVICE_CONTEXT pDeviceContext = DeviceGetContext(Device);
 
   Status = WdfWaitLockAcquire(pDeviceContext->DeviceWaitLock, 0);
   ASSERT(NT_SUCCESS(Status));
 
   Status = ReadRegister(pDeviceContext, 5, &Reg5, sizeof(Reg5));
-  if (NT_SUCCESS(Status)) {
+  if (!NT_SUCCESS(Status) || Reg5 & 0x40) {
     pDeviceContext->Register5 &= 0xbf;
     Status = WriteRegister(
         pDeviceContext, 5, &pDeviceContext->Register5,
@@ -98,6 +100,6 @@ BOOLEAN EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
   else {
     WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
   }
-  
+
   return TRUE;
 }

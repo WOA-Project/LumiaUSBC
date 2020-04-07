@@ -11,26 +11,6 @@
 
 #include <UC120Registers.h>
 
-NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext)
-{
-  NTSTATUS      status = STATUS_SUCCESS;
-  unsigned char data   = 0;
-
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_InterruptHandled Entry");
-
-  data   = 0xFF; // Clear to 0xFF
-  status = WriteRegister(deviceContext, 2, &data, 1);
-  if (!NT_SUCCESS(status)) {
-    goto Exit;
-  }
-
-Exit:
-  TraceEvents(
-      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "UC120_InterruptHandled Exit");
-  return status;
-}
-
 NTSTATUS UC120_UploadCalibrationData(
     PDEVICE_CONTEXT deviceContext, unsigned char *calibrationFile,
     unsigned int length)
@@ -347,9 +327,11 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
         }
         break;
       case 2:
+        IsPowerSource = FALSE;
         State = 1;
         break;
       case 3:
+        IsPowerSource = FALSE;
         State = 3;
         break;
       case 5:
@@ -359,10 +341,12 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
       case 6:
         State    = 5;
         Polarity = 0;
+        IsPowerSource = FALSE;
         break;
       case 7:
         State    = 4;
         Polarity = 0;
+        IsPowerSource = FALSE;
         break;
       case 8:
         IsPowerSource = TRUE;
@@ -431,7 +415,7 @@ NTSTATUS UC120_ProcessIncomingPdMessage(PDEVICE_CONTEXT DeviceContext)
   UCHAR    IncomingMessgaeState;
 
   Status = ReadRegister(
-      DeviceContext, 2, &DeviceContext->Register1,
+      DeviceContext, 1, &DeviceContext->Register1,
       sizeof(DeviceContext->Register1));
   if (!NT_SUCCESS(Status))
     goto exit;
@@ -439,7 +423,7 @@ NTSTATUS UC120_ProcessIncomingPdMessage(PDEVICE_CONTEXT DeviceContext)
   IncomingMessgaeState = DeviceContext->Register1 >> 5;
   if (IncomingMessgaeState == 6) {
     DeviceContext->IncomingPdMessageState = 6;
-    // Set KEvent?
+    KeSetEvent(&DeviceContext->PdEvent, 0, 0);
   }
   else if (DeviceContext->Register1 & 0x1F || IncomingMessgaeState == 5) {
     // TODO: Read message
@@ -458,7 +442,7 @@ NTSTATUS UC120_ReadIncomingMessageStatus(PDEVICE_CONTEXT DeviceContext) {
     goto exit;
 
   DeviceContext->IncomingPdMessageState = DeviceContext->Register1 >> 5;
-  // SetKEvent?
+  KeSetEvent(&DeviceContext->PdEvent, 0, 0);
 
 exit:
   return Status;

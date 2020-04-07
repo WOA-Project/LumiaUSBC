@@ -1,6 +1,5 @@
 EXTERN_C_START
 
-NTSTATUS UC120_InterruptHandled(PDEVICE_CONTEXT deviceContext);
 NTSTATUS UC120_UploadCalibrationData(PDEVICE_CONTEXT deviceContext, unsigned char* calibrationFile, unsigned int length);
 NTSTATUS UC120_SetVConn(PDEVICE_CONTEXT DeviceContext, BOOLEAN VConnStatus);
 NTSTATUS UC120_SetPowerRole(PDEVICE_CONTEXT DeviceContext, BOOLEAN PowerRole);

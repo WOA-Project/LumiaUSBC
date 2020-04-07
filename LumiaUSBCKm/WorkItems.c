@@ -19,10 +19,9 @@ void PmicInterrupt1WorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject)
   PDEVICE_CONTEXT pDeviceContext = DeviceGetContext(Device);
 
   Status = WdfWaitLockAcquire(pDeviceContext->DeviceWaitLock, 0);
-  if (!NT_SUCCESS(Status))
-    return;
+  ASSERT(NT_SUCCESS(Status));
 
-  pDeviceContext->Register5 |= 0x40;
+      pDeviceContext->Register5 |= 0x40;
   Status = WriteRegister(
       pDeviceContext, 5, &pDeviceContext->Register5,
       sizeof(pDeviceContext->Register5));

@@ -448,42 +448,52 @@ LumiaUSBCDevicePrepareHardware(
     WDFDEVICE Device, WDFCMRESLIST ResourcesRaw,
     WDFCMRESLIST ResourcesTranslated)
 {
-  NTSTATUS                   status = STATUS_SUCCESS;
-  PDEVICE_CONTEXT            devCtx;
-  UCM_MANAGER_CONFIG         ucmCfg;
-  UCM_CONNECTOR_CONFIG       connCfg;
-  UCM_CONNECTOR_TYPEC_CONFIG typeCConfig;
-  UCM_CONNECTOR_PD_CONFIG    pdConfig;
-  WDF_OBJECT_ATTRIBUTES      attr;
+  NTSTATUS                   Status = STATUS_SUCCESS;
+  PDEVICE_CONTEXT            pDeviceContext;
+  UCM_MANAGER_CONFIG         UcmMgrConfig;
+  UCM_CONNECTOR_CONFIG       UcmConnectorConfig;
+  UCM_CONNECTOR_TYPEC_CONFIG UcmTypeCConfig;
+  UCM_CONNECTOR_PD_CONFIG    UcmPdConfig;
+  WDF_OBJECT_ATTRIBUTES      Attribs;
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
       "LumiaUSBCDevicePrepareHardware Entry");
 
-  devCtx = DeviceGetContext(Device);
+  pDeviceContext = DeviceGetContext(Device);
 
-  status = LumiaUSBCProbeResources(devCtx, ResourcesTranslated, ResourcesRaw);
-  if (!NT_SUCCESS(status)) {
+  pDeviceContext->State3              = 4;
+  pDeviceContext->PdStateMachineIndex = 7;
+  pDeviceContext->IncomingPdHandled   = TRUE;
+  pDeviceContext->Polarity            = 0;
+  pDeviceContext->PowerSource         = 2;
+
+  Status = LumiaUSBCProbeResources(
+      pDeviceContext, ResourcesTranslated, ResourcesRaw);
+  if (!NT_SUCCESS(Status)) {
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "LumiaUSBCProbeResources failed 0x%x\n", status);
+        "LumiaUSBCProbeResources failed 0x%x\n", Status);
     goto Exit;
   }
 
-  if (devCtx->Connector) {
+  if (pDeviceContext->Connector) {
     goto Exit;
   }
+
+  // Initialize PD event
+  KeInitializeEvent(&pDeviceContext->PdEvent, NotificationEvent, FALSE);
 
   //
   // Initialize UCM Manager
   //
-  UCM_MANAGER_CONFIG_INIT(&ucmCfg);
+  UCM_MANAGER_CONFIG_INIT(&UcmMgrConfig);
 
-  status = UcmInitializeDevice(Device, &ucmCfg);
-  if (!NT_SUCCESS(status)) {
+  Status = UcmInitializeDevice(Device, &UcmMgrConfig);
+  if (!NT_SUCCESS(Status)) {
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "UcmInitializeDevice failed 0x%x\n", status);
+        "UcmInitializeDevice failed 0x%x\n", Status);
     goto Exit;
   }
 
@@ -491,36 +501,37 @@ LumiaUSBCDevicePrepareHardware(
   // Assemble the Type-C and PD configuration for UCM.
   //
 
-  UCM_CONNECTOR_CONFIG_INIT(&connCfg, 0);
+  UCM_CONNECTOR_CONFIG_INIT(&UcmConnectorConfig, 0);
 
   UCM_CONNECTOR_TYPEC_CONFIG_INIT(
-      &typeCConfig,
+      &UcmTypeCConfig,
       UcmTypeCOperatingModeDrp | UcmTypeCOperatingModeUfp |
           UcmTypeCOperatingModeDfp,
       UcmTypeCCurrent3000mA | UcmTypeCCurrent1500mA |
           UcmTypeCCurrentDefaultUsb);
 
-  typeCConfig.EvtSetDataRole        = LumiaUSBCSetDataRole;
-  typeCConfig.AudioAccessoryCapable = FALSE;
+  UcmTypeCConfig.EvtSetDataRole        = LumiaUSBCSetDataRole;
+  UcmTypeCConfig.AudioAccessoryCapable = FALSE;
 
   UCM_CONNECTOR_PD_CONFIG_INIT(
-      &pdConfig, UcmPowerRoleSink | UcmPowerRoleSource);
+      &UcmPdConfig, UcmPowerRoleSink | UcmPowerRoleSource);
 
-  pdConfig.EvtSetPowerRole = LumiaUSBCSetPowerRole;
-  connCfg.TypeCConfig      = &typeCConfig;
-  connCfg.PdConfig         = &pdConfig;
+  UcmPdConfig.EvtSetPowerRole    = LumiaUSBCSetPowerRole;
+  UcmConnectorConfig.TypeCConfig = &UcmTypeCConfig;
+  UcmConnectorConfig.PdConfig    = &UcmPdConfig;
 
-  WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attr, CONNECTOR_CONTEXT);
+  WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&Attribs, CONNECTOR_CONTEXT);
 
   //
   // Create the UCM connector object.
   //
 
-  status = UcmConnectorCreate(Device, &connCfg, &attr, &devCtx->Connector);
-  if (!NT_SUCCESS(status)) {
+  Status = UcmConnectorCreate(
+      Device, &UcmConnectorConfig, &Attribs, &pDeviceContext->Connector);
+  if (!NT_SUCCESS(Status)) {
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "UcmConnectorCreate failed 0x%x\n", status);
+        "UcmConnectorCreate failed 0x%x\n", Status);
     goto Exit;
   }
 
@@ -528,7 +539,7 @@ Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
       "LumiaUSBCDevicePrepareHardware Exit");
-  return status;
+  return Status;
 }
 
 NTSTATUS
@@ -761,7 +772,8 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
       goto Exit;
     }
 
-    // TODO: Write Unk1 that have not yet understood
+    // TODO: understand what's this
+    pDeviceContext->State9 = 1;
   }
 
   Delay.QuadPart = -2000000;
@@ -819,7 +831,8 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
     if (!NT_SUCCESS(Status)) {
       TraceEvents(
           TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice failed to WdfWaitLockCreate: %!STATUS!\n", Status);
+          "LumiaUSBCKmCreateDevice failed to WdfWaitLockCreate: %!STATUS!\n",
+          Status);
       goto Exit;
     }
 
