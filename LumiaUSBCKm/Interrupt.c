@@ -27,6 +27,8 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
   Device         = WdfInterruptGetDevice(Interrupt);
   pDeviceContext = DeviceGetContext(Device);
 
+  TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "UC120 Interrupt Begin");
+
   Status = WdfWaitLockAcquire(pDeviceContext->DeviceWaitLock, 0);
   ASSERT(NT_SUCCESS(Status));
 
@@ -46,6 +48,16 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
       pDeviceContext, 2, &pDeviceContext->Register2,
       sizeof(pDeviceContext->Register2));
   WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
+
+  // Trace
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DEVICE,
+      "UC120 EOI: PdStateMachineIndex = %u, IncomingPdHandled = %!bool!, PowerSource = %u, "
+      "State3 = %u, State9 = %u, Polarity = %u, IncomingPdMessageState = %u",
+      pDeviceContext->PdStateMachineIndex, pDeviceContext->IncomingPdHandled,
+      pDeviceContext->PowerSource, pDeviceContext->State3,
+      pDeviceContext->State9, pDeviceContext->Polarity,
+      pDeviceContext->IncomingPdMessageState);
 
   return TRUE;
 }
@@ -77,6 +89,8 @@ BOOLEAN EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
   WDFDEVICE       Device         = WdfInterruptGetDevice(Interrupt);
   PDEVICE_CONTEXT pDeviceContext = DeviceGetContext(Device);
 
+  TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "PMIC2 Interrupt Begin");
+
   Status = WdfWaitLockAcquire(pDeviceContext->DeviceWaitLock, 0);
   ASSERT(NT_SUCCESS(Status));
 
@@ -100,6 +114,17 @@ BOOLEAN EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
   else {
     WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
   }
+
+  // Trace
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DEVICE,
+      "PMIC2 EOI: PdStateMachineIndex = %u, IncomingPdHandled = %!bool!, "
+      "PowerSource = %u, "
+      "State3 = %u, State9 = %u, Polarity = %u, IncomingPdMessageState = %u",
+      pDeviceContext->PdStateMachineIndex, pDeviceContext->IncomingPdHandled,
+      pDeviceContext->PowerSource, pDeviceContext->State3,
+      pDeviceContext->State9, pDeviceContext->Polarity,
+      pDeviceContext->IncomingPdMessageState);
 
   return TRUE;
 }

@@ -224,7 +224,7 @@ LumiaUSBCProbeResources(
 
   WdfInterruptSetPolicy(
       DeviceContext->Uc120Interrupt, WdfIrqPolicyAllProcessorsInMachine,
-      WdfIrqPriorityHigh, AFFINITY_MASK(0));
+      WdfIrqPriorityHigh, 0);
 
   WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtPlugDetInterruptIsr, NULL);
   InterruptConfig.InterruptTranslated =
@@ -741,6 +741,70 @@ NTSTATUS LumiaUSBCSelfManagedIoInit(WDFDEVICE Device)
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
         "Initseq Write Register 13 failed 0x%x", Status);
+    goto Exit;
+  }
+
+  pDeviceContext->Register2 = 0xff;
+  Status                    = WriteRegister(
+      pDeviceContext, 2, &pDeviceContext->Register2,
+      sizeof(pDeviceContext->Register2));
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "Initseq Write Register 2 failed 0x%x", Status);
+    goto Exit;
+  }
+
+  pDeviceContext->Register3 = 0xff;
+  Status                    = WriteRegister(
+      pDeviceContext, 3, &pDeviceContext->Register3,
+      sizeof(pDeviceContext->Register3));
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "Initseq Write Register 3 failed 0x%x", Status);
+    goto Exit;
+  }
+
+  pDeviceContext->Register4 = 0x7;
+  Status                    = WriteRegister(
+      pDeviceContext, 4, &pDeviceContext->Register4,
+      sizeof(pDeviceContext->Register4));
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "Initseq Write Register 4 failed 0x%x", Status);
+    goto Exit;
+  }
+
+  pDeviceContext->Register5 = 0x8;
+  Status                    = WriteRegister(
+      pDeviceContext, 5, &pDeviceContext->Register5,
+      sizeof(pDeviceContext->Register5));
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "Initseq Write Register 5 failed 0x%x", Status);
+    goto Exit;
+  }
+
+  Status = ReadRegister(
+      pDeviceContext, 2, &pDeviceContext->Register2,
+      sizeof(pDeviceContext->Register2));
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DEVICE, "ReadRegister 2 failed with %!STATUS!",
+        Status);
+    goto Exit;
+  }
+
+  Status = ReadRegister(
+      pDeviceContext, 7, &pDeviceContext->Register7,
+      sizeof(pDeviceContext->Register7));
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DEVICE, "ReadRegister 7 failed with %!STATUS!",
+        Status);
     goto Exit;
   }
 
