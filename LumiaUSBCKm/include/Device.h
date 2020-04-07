@@ -47,7 +47,14 @@ typedef struct _DEVICE_CONTEXT {
   WDFINTERRUPT  PmicInterrupt2;
   BOOLEAN       Connected;
 
-  USHORT PdStateMachineIndex;
+  WDFWAITLOCK DeviceWaitLock;
+
+  USHORT  PdStateMachineIndex;
+  UCHAR   State3;
+  BOOLEAN IncomingPdHandled;
+  UCHAR   PowerSource;
+  UCHAR   Polarity;
+  UCHAR   IncomingPdMessageState;
 
   UCHAR Register0;
   UCHAR Register1;

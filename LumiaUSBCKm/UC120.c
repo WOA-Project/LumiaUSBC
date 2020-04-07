@@ -215,3 +215,251 @@ Uc120InterruptDisable(WDFINTERRUPT Interrupt, WDFDEVICE AssociatedDevice)
 exit:
   return Status;
 }
+
+NTSTATUS UC120_SetVConn(PDEVICE_CONTEXT DeviceContext, BOOLEAN VConnStatus)
+{
+  NTSTATUS Status;
+
+  Status = ReadRegister(
+      DeviceContext, 5, &DeviceContext->Register5,
+      sizeof(DeviceContext->Register5));
+
+  if (!NT_SUCCESS(Status)) {
+    goto exit;
+  }
+
+  DeviceContext->Register5 ^=
+      (DeviceContext->Register5 ^ 0x20 * VConnStatus) & 0x20;
+  Status = WriteRegister(
+      DeviceContext, 5, &DeviceContext->Register5,
+      sizeof(DeviceContext->Register5));
+
+  if (!NT_SUCCESS(Status)) {
+    goto exit;
+  }
+
+exit:
+  return Status;
+}
+
+NTSTATUS UC120_SetPowerRole(PDEVICE_CONTEXT DeviceContext, BOOLEAN PowerRole)
+{
+  NTSTATUS Status;
+
+  Status = ReadRegister(
+      DeviceContext, 5, &DeviceContext->Register5,
+      sizeof(DeviceContext->Register5));
+
+  if (!NT_SUCCESS(Status)) {
+    goto exit;
+  }
+
+  DeviceContext->Register5 ^= (DeviceContext->Register5 ^ PowerRole) & 1;
+  Status = WriteRegister(
+      DeviceContext, 5, &DeviceContext->Register5,
+      sizeof(DeviceContext->Register5));
+
+  if (!NT_SUCCESS(Status)) {
+    goto exit;
+  }
+
+exit:
+  return Status;
+}
+
+NTSTATUS UC120_ToggleReg4Bit1(PDEVICE_CONTEXT DeviceContext, BOOLEAN PowerRole)
+{
+  NTSTATUS Status;
+
+  Status = ReadRegister(
+      DeviceContext, 4, &DeviceContext->Register4,
+      sizeof(DeviceContext->Register4));
+
+  if (!NT_SUCCESS(Status)) {
+    goto exit;
+  }
+
+  DeviceContext->Register4 ^= (DeviceContext->Register4 ^ 2 * PowerRole) & 2;
+  Status = WriteRegister(
+      DeviceContext, 4, &DeviceContext->Register4,
+      sizeof(DeviceContext->Register4));
+
+  if (!NT_SUCCESS(Status)) {
+    goto exit;
+  }
+
+exit:
+  return Status;
+}
+
+NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
+{
+  NTSTATUS Status = STATUS_SUCCESS;
+  UCHAR    Role;
+  UCHAR    Polarity = 0;
+  USHORT   State;
+  UCHAR    CableType;
+  UCHAR    Reg2B6;
+
+  BOOLEAN IsPowerSource = FALSE;
+  UCHAR   State3        = 4;
+
+  if (DeviceContext->Register2 & 0xFC) {
+    Status = ReadRegister(
+        DeviceContext, 7, &DeviceContext->Register7,
+        sizeof(DeviceContext->Register7));
+    if (!NT_SUCCESS(Status))
+      goto exit;
+
+    Role  = (DeviceContext->Register2 & 0x3c) >> 2;
+    State = 3;
+
+    if (Role) {
+      Polarity  = (DeviceContext->Register7 & 0x40) ? 2 : 1;
+      CableType = (DeviceContext->Register7 >> 4) & 3;
+
+      switch (CableType) {
+      case 1:
+        State = 0;
+        break;
+      case 2:
+        State = 1;
+        break;
+      case 3:
+        State = 2;
+        break;
+      }
+
+      switch (Role) {
+      case 1:
+      case 4:
+        if (!DeviceContext->IncomingPdHandled) {
+          // Handle PD
+          // 406c8c
+          DeviceContext->PowerSource         = 2;
+          DeviceContext->PdStateMachineIndex = 7;
+          DeviceContext->IncomingPdHandled   = TRUE;
+          DeviceContext->Polarity            = 0;
+          DeviceContext->State3              = 4;
+          UC120_ToggleReg4Bit1(DeviceContext, TRUE);
+          UC120_SetVConn(DeviceContext, FALSE);
+          UC120_SetPowerRole(DeviceContext, FALSE);
+        }
+        break;
+      case 2:
+        State = 1;
+        break;
+      case 3:
+        State = 3;
+        break;
+      case 5:
+        State         = 0;
+        IsPowerSource = TRUE;
+        break;
+      case 6:
+        State    = 5;
+        Polarity = 0;
+        break;
+      case 7:
+        State    = 4;
+        Polarity = 0;
+        break;
+      case 8:
+        IsPowerSource = TRUE;
+        State         = 6;
+        break;
+      }
+
+      // Powered cable?
+      if (Role == 2 || Role == 3) {
+        Status = UC120_SetVConn(DeviceContext, TRUE);
+        if (!NT_SUCCESS(Status))
+          goto exit;
+
+        Status = UC120_SetPowerRole(DeviceContext, TRUE);
+        if (!NT_SUCCESS(Status))
+          goto exit;
+      }
+
+      if (DeviceContext->IncomingPdHandled) {
+        // 406c8c
+        DeviceContext->IncomingPdHandled   = FALSE;
+        DeviceContext->PowerSource         = IsPowerSource;
+        DeviceContext->Polarity            = Polarity;
+        DeviceContext->PdStateMachineIndex = State;
+        UC120_ToggleReg4Bit1(DeviceContext, FALSE);
+      }
+    }
+
+    Reg2B6 = DeviceContext->Register2 >> 6;
+    switch (Reg2B6) {
+    case 1:
+      State3 = 0;
+      break;
+    case 2:
+      State3 = 1;
+      break;
+    case 3:
+      State3 = 2;
+      break;
+    }
+
+    if (State3 == DeviceContext->State3) {
+      goto exit;
+    }
+    // 406c8c
+    DeviceContext->State3 = State3;
+  }
+
+  if (DeviceContext->Register2 && 2) {
+    // Handle incoming PD message
+    Status = UC120_ProcessIncomingPdMessage(DeviceContext);
+  }
+
+  if (DeviceContext->Register2 && 1) {
+    // Read incoming PD message status
+    Status = UC120_ReadIncomingMessageStatus(DeviceContext);
+  }
+
+exit:
+  return Status;
+}
+
+NTSTATUS UC120_ProcessIncomingPdMessage(PDEVICE_CONTEXT DeviceContext)
+{
+  NTSTATUS Status = STATUS_SUCCESS;
+  UCHAR    IncomingMessgaeState;
+
+  Status = ReadRegister(
+      DeviceContext, 2, &DeviceContext->Register1,
+      sizeof(DeviceContext->Register1));
+  if (!NT_SUCCESS(Status))
+    goto exit;
+
+  IncomingMessgaeState = DeviceContext->Register1 >> 5;
+  if (IncomingMessgaeState == 6) {
+    DeviceContext->IncomingPdMessageState = 6;
+    // Set KEvent?
+  }
+  else if (DeviceContext->Register1 & 0x1F || IncomingMessgaeState == 5) {
+    // TODO: Read message
+  }
+
+exit:
+  return Status;
+}
+
+NTSTATUS UC120_ReadIncomingMessageStatus(PDEVICE_CONTEXT DeviceContext) {
+  NTSTATUS Status = STATUS_SUCCESS;
+  Status          = ReadRegister(
+      DeviceContext, 2, &DeviceContext->Register1,
+      sizeof(DeviceContext->Register1));
+  if (!NT_SUCCESS(Status))
+    goto exit;
+
+  DeviceContext->IncomingPdMessageState = DeviceContext->Register1 >> 5;
+  // SetKEvent?
+
+exit:
+  return Status;
+}

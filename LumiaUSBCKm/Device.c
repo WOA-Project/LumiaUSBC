@@ -776,45 +776,59 @@ Exit:
 NTSTATUS
 LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
 {
-  WDF_OBJECT_ATTRIBUTES        deviceAttributes;
-  WDF_PNPPOWER_EVENT_CALLBACKS pnpPowerCallbacks;
-  PDEVICE_CONTEXT              deviceContext;
-  WDFDEVICE                    device;
-  UCM_MANAGER_CONFIG           ucmConfig;
-  NTSTATUS                     status;
+  WDF_OBJECT_ATTRIBUTES        DeviceAttributes;
+  WDF_OBJECT_ATTRIBUTES        WaitLockAttrib;
+  WDF_PNPPOWER_EVENT_CALLBACKS PnpPowerCallbacks;
+  PDEVICE_CONTEXT              DeviceContext;
+  WDFDEVICE                    Device;
+  UCM_MANAGER_CONFIG           UcmConfig;
+  NTSTATUS                     Status;
 
   PAGED_CODE();
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCKmCreateDevice Entry");
 
-  WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
-  pnpPowerCallbacks.EvtDevicePrepareHardware   = LumiaUSBCDevicePrepareHardware;
-  pnpPowerCallbacks.EvtDeviceReleaseHardware   = LumiaUSBCDeviceReleaseHardware;
-  pnpPowerCallbacks.EvtDeviceD0Entry           = LumiaUSBCDeviceD0Entry;
-  pnpPowerCallbacks.EvtDeviceD0Exit            = LumiaUSBCDeviceD0Exit;
-  pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = LumiaUSBCSelfManagedIoInit;
-  WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
+  WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&PnpPowerCallbacks);
+  PnpPowerCallbacks.EvtDevicePrepareHardware   = LumiaUSBCDevicePrepareHardware;
+  PnpPowerCallbacks.EvtDeviceReleaseHardware   = LumiaUSBCDeviceReleaseHardware;
+  PnpPowerCallbacks.EvtDeviceD0Entry           = LumiaUSBCDeviceD0Entry;
+  PnpPowerCallbacks.EvtDeviceD0Exit            = LumiaUSBCDeviceD0Exit;
+  PnpPowerCallbacks.EvtDeviceSelfManagedIoInit = LumiaUSBCSelfManagedIoInit;
+  WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &PnpPowerCallbacks);
 
-  WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, DEVICE_CONTEXT);
+  WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&DeviceAttributes, DEVICE_CONTEXT);
 
-  status = WdfDeviceCreate(&DeviceInit, &deviceAttributes, &device);
+  Status = WdfDeviceCreate(&DeviceInit, &DeviceAttributes, &Device);
 
-  if (NT_SUCCESS(status)) {
-    deviceContext = DeviceGetContext(device);
+  if (NT_SUCCESS(Status)) {
+    DeviceContext = DeviceGetContext(Device);
 
     //
     // Initialize the context.
     //
-    deviceContext->Device    = device;
-    deviceContext->Connector = NULL;
+    DeviceContext->Device    = Device;
+    DeviceContext->Connector = NULL;
 
-    UCM_MANAGER_CONFIG_INIT(&ucmConfig);
-    status = UcmInitializeDevice(device, &ucmConfig);
-    if (!NT_SUCCESS(status)) {
+    WDF_OBJECT_ATTRIBUTES_INIT(&WaitLockAttrib);
+    WaitLockAttrib.ExecutionLevel = WdfExecutionLevelInheritFromParent;
+    WaitLockAttrib.SynchronizationScope =
+        WdfSynchronizationScopeInheritFromParent;
+    WaitLockAttrib.ParentObject = Device;
+    Status = WdfWaitLockCreate(&WaitLockAttrib, &DeviceContext->DeviceWaitLock);
+    if (!NT_SUCCESS(Status)) {
       TraceEvents(
           TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", status);
+          "LumiaUSBCKmCreateDevice failed to WdfWaitLockCreate: %!STATUS!\n", Status);
+      goto Exit;
+    }
+
+    UCM_MANAGER_CONFIG_INIT(&UcmConfig);
+    Status = UcmInitializeDevice(Device, &UcmConfig);
+    if (!NT_SUCCESS(Status)) {
+      TraceEvents(
+          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
       goto Exit;
     }
 
@@ -825,11 +839,11 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
     idleSettings.IdleTimeoutType = DriverManagedIdleTimeout;
     idleSettings.Enabled         = WdfFalse;
 
-    status = WdfDeviceAssignS0IdleSettings(device, &idleSettings);
-    if (!NT_SUCCESS(status)) {
+    Status = WdfDeviceAssignS0IdleSettings(Device, &idleSettings);
+    if (!NT_SUCCESS(Status)) {
       TraceEvents(
           TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", status);
+          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
       goto Exit;
     }
   }
@@ -837,6 +851,6 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
 Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-      "LumiaUSBCKmCreateDevice Exit: 0x%x\n", status);
-  return status;
+      "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
+  return Status;
 }
