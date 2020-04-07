@@ -36,14 +36,12 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
       pDeviceContext, 2, &pDeviceContext->Register2,
       sizeof(pDeviceContext->Register2));
 
-  if (!NT_SUCCESS(Status)) {
-    pDeviceContext->Register2 = 0xFF;
-  }
-  else {
+  if (NT_SUCCESS(Status)) {
     UC120_HandleInterrupt(pDeviceContext);
   }
 
   // EOI
+  pDeviceContext->Register2 = 0xFF;
   WriteRegister(
       pDeviceContext, 2, &pDeviceContext->Register2,
       sizeof(pDeviceContext->Register2));
