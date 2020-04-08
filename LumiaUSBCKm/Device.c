@@ -382,7 +382,6 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
   WDF_PNPPOWER_EVENT_CALLBACKS PnpPowerCallbacks;
   PDEVICE_CONTEXT              DeviceContext;
   WDFDEVICE                    Device;
-  UCM_MANAGER_CONFIG           UcmConfig;
   NTSTATUS                     Status;
 
   PAGED_CODE();
@@ -424,6 +423,8 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
       goto Exit;
     }
 
+    UCM_MANAGER_CONFIG UcmConfig;
+
     UCM_MANAGER_CONFIG_INIT(&UcmConfig);
     Status = UcmInitializeDevice(Device, &UcmConfig);
     if (!NT_SUCCESS(Status)) {
@@ -461,13 +462,8 @@ LumiaUSBCDevicePrepareHardware(
     WDFDEVICE Device, WDFCMRESLIST ResourcesRaw,
     WDFCMRESLIST ResourcesTranslated)
 {
-  NTSTATUS                   Status = STATUS_SUCCESS;
-  PDEVICE_CONTEXT            pDeviceContext;
-  UCM_MANAGER_CONFIG         UcmMgrConfig;
-  UCM_CONNECTOR_CONFIG       UcmConnectorConfig;
-  UCM_CONNECTOR_TYPEC_CONFIG UcmTypeCConfig;
-  UCM_CONNECTOR_PD_CONFIG    UcmPdConfig;
-  WDF_OBJECT_ATTRIBUTES      Attribs;
+  NTSTATUS        Status = STATUS_SUCCESS;
+  PDEVICE_CONTEXT pDeviceContext;
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
@@ -518,8 +514,8 @@ LumiaUSBCDevicePrepareHardware(
     goto Exit;
   }
 
-  PoFxActivateComponent(pDeviceContext->PoHandle, 0, PO_FX_FLAG_BLOCKING);
   PoFxStartDevicePowerManagement(pDeviceContext->PoHandle);
+  PoFxActivateComponent(pDeviceContext->PoHandle, 0, PO_FX_FLAG_BLOCKING);
 
   // Tell PEP to turn on the clock
   ULONG Input[8], Output[6];
@@ -538,6 +534,12 @@ LumiaUSBCDevicePrepareHardware(
 
   // Initialize PD event
   KeInitializeEvent(&pDeviceContext->PdEvent, NotificationEvent, FALSE);
+
+  UCM_MANAGER_CONFIG         UcmMgrConfig;
+  UCM_CONNECTOR_CONFIG       UcmConnectorConfig;
+  UCM_CONNECTOR_TYPEC_CONFIG UcmTypeCConfig;
+  UCM_CONNECTOR_PD_CONFIG    UcmPdConfig;
+  WDF_OBJECT_ATTRIBUTES      Attribs;
 
   //
   // Initialize UCM Manager

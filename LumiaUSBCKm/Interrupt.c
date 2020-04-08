@@ -58,8 +58,10 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
       pDeviceContext->State9, pDeviceContext->Polarity,
       pDeviceContext->IncomingPdMessageState);
 
-  // Change state for charging (at least now)
-  if (pDeviceContext->PowerSource == 1) {
+  WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
+
+    // Change state for charging (at least now)
+  if (pDeviceContext->PowerSource == 1 || pDeviceContext->PowerSource == 2) {
     if (pDeviceContext->Connected) {
       Status = USBC_Detach(pDeviceContext);
     }
@@ -76,15 +78,19 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
     }
     else {
       TraceEvents(
-          TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT,
-          "Charging status is set");
+          TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Charging status is set");
     }
 
     pDeviceContext->Connected = TRUE;
   }
 
+  EvtPmicInterrupt2Isr(Interrupt, MessageID);
+  pDeviceContext->Register1 = 0x20;
+  WriteRegister(
+      pDeviceContext, 1, &pDeviceContext->Register1,
+      sizeof(pDeviceContext->Register1));
+
 Exit:
-  WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
   return TRUE;
 }
 
