@@ -193,7 +193,7 @@ exit:
   return Status;
 }
 
-NTSTATUS UC120_SetVConn(PDEVICE_CONTEXT DeviceContext, BOOLEAN VConnStatus)
+NTSTATUS UC120_SetVConn(PDEVICE_CONTEXT DeviceContext, UCHAR VConnStatus)
 {
   NTSTATUS Status;
 
@@ -219,7 +219,7 @@ exit:
   return Status;
 }
 
-NTSTATUS UC120_SetPowerRole(PDEVICE_CONTEXT DeviceContext, BOOLEAN PowerRole)
+NTSTATUS UC120_SetPowerRole(PDEVICE_CONTEXT DeviceContext, UCHAR PowerRole)
 {
   NTSTATUS Status;
 
@@ -244,7 +244,7 @@ exit:
   return Status;
 }
 
-NTSTATUS UC120_SetDataRole(PDEVICE_CONTEXT DeviceContext, BOOLEAN DataRole)
+NTSTATUS UC120_SetDataRole(PDEVICE_CONTEXT DeviceContext, UCHAR DataRole)
 {
   NTSTATUS Status;
 
@@ -269,7 +269,7 @@ exit:
   return Status;
 }
 
-NTSTATUS UC120_ToggleReg4Bit1(PDEVICE_CONTEXT DeviceContext, BOOLEAN PowerRole)
+NTSTATUS UC120_ToggleReg4Bit1(PDEVICE_CONTEXT DeviceContext, UCHAR PowerRole)
 {
   NTSTATUS Status;
 
@@ -303,8 +303,8 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
   UCHAR    CableType;
   UCHAR    Reg2B6;
 
-  BOOLEAN IsPowerSource = FALSE;
-  UCHAR   State3        = 4;
+  UCHAR IsPowerSource = FALSE;
+  UCHAR State3        = 4;
 
   if (DeviceContext->Register2 & 0xFC) {
     Status = ReadRegister(
@@ -335,12 +335,12 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
       switch (Role) {
       case 1:
       case 4:
-        if (!DeviceContext->IncomingPdHandled) {
+        if (!DeviceContext->State0) {
           // Handle PD
           // 406c8c
           DeviceContext->PowerSource         = 2;
           DeviceContext->PdStateMachineIndex = 7;
-          DeviceContext->IncomingPdHandled   = TRUE;
+          DeviceContext->State0              = TRUE;
           DeviceContext->Polarity            = 0;
           DeviceContext->State3              = 4;
           UC120_ToggleReg4Bit1(DeviceContext, TRUE);
@@ -387,9 +387,9 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
           goto exit;
       }
 
-      if (DeviceContext->IncomingPdHandled) {
+      if (DeviceContext->State0) {
         // 406c8c
-        DeviceContext->IncomingPdHandled   = FALSE;
+        DeviceContext->State0              = FALSE;
         DeviceContext->PowerSource         = IsPowerSource;
         DeviceContext->Polarity            = Polarity;
         DeviceContext->PdStateMachineIndex = State;
@@ -510,17 +510,142 @@ NTSTATUS Uc120_Ioctl_SetVConnRoleSwitch(
 NTSTATUS Uc120_Ioctl_ReportNewPowerRole(
     PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
 {
-  UNREFERENCED_PARAMETER(Request);
-  UNREFERENCED_PARAMETER(DeviceContext);
+  NTSTATUS Status;
+  int *    Buf;
+  int      IncomingRole;
+  size_t   BufSize;
 
-  return STATUS_NOT_IMPLEMENTED;
+  UCHAR Bit0 = 0, Bit6 = 0;
+
+  if (DeviceContext->State0) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ReportNewPowerRole: Invalid device state: State0: %u",
+        DeviceContext->State0);
+    Status = STATUS_INVALID_DEVICE_STATE;
+    goto exit;
+  }
+
+  Status = WdfRequestRetrieveInputBuffer(Request, 4, &Buf, &BufSize);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ReportNewPowerRole: WdfRequestRetrieveInputBuffer failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+  Status = ReadRegister(DeviceContext, 5, &DeviceContext->Register5, 1);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ReportNewPowerRole: ReadRegister R5 failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+  IncomingRole = *Buf;
+  if (!IncomingRole && !(DeviceContext->Register5 & 1)) {
+    // Nothing to do?
+    goto exit;
+  }
+
+  if (IncomingRole == 1) {
+    if (DeviceContext->Register5 & 1) {
+      // Nothing to do?
+      goto exit;
+    }
+
+    Bit0 = 1;
+    Bit6 = 0;
+  }
+  else if (IncomingRole == 0) {
+    Bit0 = 0;
+    Bit6 = 1;
+  }
+  else {
+    Status = STATUS_INVALID_PARAMETER;
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ReportNewDataRole: Unknown role bit");
+    goto exit;
+  }
+
+  DeviceContext->Register5 ^= (DeviceContext->Register5 ^ Bit0) & 1;
+  Status = WriteRegister(DeviceContext, 5, &DeviceContext->Register5, 1);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ReportNewPowerRole: WriteRegister R5 B1 failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+  DeviceContext->Register5 ^= (DeviceContext->Register5 ^ (Bit6 << 6)) & 0x40;
+  Status = WriteRegister(DeviceContext, 5, &DeviceContext->Register5, 1);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ReportNewPowerRole: WriteRegister R5 B6 failed "
+        "%!STATUS!",
+        Status);
+  }
+  
+exit:
+  WdfRequestComplete(Request, Status);
+  return Status;
 }
 
 NTSTATUS
 Uc120_Ioctl_ReportNewDataRole(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
 {
-  UNREFERENCED_PARAMETER(Request);
-  UNREFERENCED_PARAMETER(DeviceContext);
+  UCHAR    RoleBit = 0;
+  int *    Buf;
+  size_t   BufSize;
+  NTSTATUS Status;
 
-  return STATUS_NOT_IMPLEMENTED;
+  Status = WdfRequestRetrieveInputBuffer(Request, 4, &Buf, &BufSize);
+  if (!NT_SUCCESS(Status)) {
+    WdfRequestComplete(Request, Status);
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ReportNewDataRole: WdfRequestRetrieveInputBuffer failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+  if (*Buf) {
+    if (*Buf != 1) {
+      Status = STATUS_INVALID_PARAMETER;
+      WdfRequestComplete(Request, Status);
+      TraceEvents(
+          TRACE_LEVEL_ERROR, TRACE_DRIVER,
+          "Uc120_Ioctl_ReportNewDataRole: Unknown role bit");
+      goto exit;
+    }
+
+    RoleBit = 0;
+  }
+  else {
+    RoleBit = 1;
+  }
+
+  DeviceContext->Register5 ^= (DeviceContext->Register5 ^ 4 * RoleBit) & 4;
+  Status = WriteRegister(DeviceContext, 5, &DeviceContext->Register5, 1);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ReportNewDataRole: WriteRegister R5 failed "
+        "%!STATUS!",
+        Status);
+  }
+
+  WdfRequestCompleteWithInformation(Request, Status, 4);
+
+exit:
+  return Status;
 }

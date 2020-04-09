@@ -81,7 +81,7 @@ LumiaUSBCProbeResources(
   NTSTATUS                        Status        = STATUS_SUCCESS;
   PCM_PARTIAL_RESOURCE_DESCRIPTOR ResDescriptor = NULL;
 
-  BOOLEAN SpiFound  = FALSE;
+  UCHAR SpiFound  = FALSE;
 
   ULONG ResourceCount;
 
@@ -179,7 +179,7 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
     DeviceContext->Device              = Device;
     DeviceContext->State3              = 4;
     DeviceContext->PdStateMachineIndex = 7;
-    DeviceContext->IncomingPdHandled   = TRUE;
+    DeviceContext->State0   = TRUE;
     DeviceContext->Polarity            = 0;
     DeviceContext->PowerSource         = 2;
 
@@ -375,7 +375,7 @@ LumiaUSBCDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
                                     0x0A, 0x7A, 0x2F, 0x5C, 0x9B};
 
   LONGLONG CalibrationFileSize = 0;
-  BOOLEAN  SkipCalibration     = FALSE;
+  UCHAR  SkipCalibration     = FALSE;
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Entry");

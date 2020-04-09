@@ -45,14 +45,14 @@ typedef struct _DEVICE_CONTEXT {
   WDFQUEUE PdMessageInQueue;
   WDFQUEUE PdMessageOutQueue;
 
-  USHORT  PdStateMachineIndex;
-  UCHAR   State3;
-  UCHAR   State9;
-  BOOLEAN IncomingPdHandled;
-  UCHAR   PowerSource;
-  UCHAR   Polarity;
+  USHORT PdStateMachineIndex;
+  UCHAR  State3;
+  UCHAR  State9;
+  UCHAR  State0;
+  UCHAR  PowerSource;
+  UCHAR  Polarity;
   CHAR   IncomingPdMessageState;
-  KEVENT  PdEvent;
+  KEVENT PdEvent;
 
   UCHAR Register0;
   UCHAR Register1;

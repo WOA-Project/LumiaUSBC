@@ -35,7 +35,7 @@ void PmicInterrupt1WorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject)
       "PMIC1 EOI: PdStateMachineIndex = %u, IncomingPdHandled = %!bool!, "
       "PowerSource = %u, "
       "State3 = %u, State9 = %u, Polarity = %u, IncomingPdMessageState = %u",
-      pDeviceContext->PdStateMachineIndex, pDeviceContext->IncomingPdHandled,
+      pDeviceContext->PdStateMachineIndex, pDeviceContext->State0,
       pDeviceContext->PowerSource, pDeviceContext->State3,
       pDeviceContext->State9, pDeviceContext->Polarity,
       pDeviceContext->IncomingPdMessageState);

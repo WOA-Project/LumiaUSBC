@@ -15,7 +15,7 @@
 
 #include "Interrupt.tmh"
 
-BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
+UCHAR EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
 {
   UNREFERENCED_PARAMETER(MessageID);
 
@@ -51,7 +51,7 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
       "UC120 EOI: PdStateMachineIndex = %u, IncomingPdHandled = %!bool!, "
       "PowerSource = %u, "
       "State3 = %u, State9 = %u, Polarity = %u, IncomingPdMessageState = %u",
-      pDeviceContext->PdStateMachineIndex, pDeviceContext->IncomingPdHandled,
+      pDeviceContext->PdStateMachineIndex, pDeviceContext->State0,
       pDeviceContext->PowerSource, pDeviceContext->State3,
       pDeviceContext->State9, pDeviceContext->Polarity,
       pDeviceContext->IncomingPdMessageState);
@@ -60,7 +60,7 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
   return TRUE;
 }
 
-BOOLEAN EvtPlugDetInterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
+UCHAR EvtPlugDetInterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
 {
   UNREFERENCED_PARAMETER(MessageID);
   UNREFERENCED_PARAMETER(Interrupt);
@@ -69,7 +69,7 @@ BOOLEAN EvtPlugDetInterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
   return TRUE;
 }
 
-BOOLEAN EvtPmicInterrupt1Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
+UCHAR EvtPmicInterrupt1Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
 {
   UNREFERENCED_PARAMETER(MessageID);
 
@@ -77,7 +77,7 @@ BOOLEAN EvtPmicInterrupt1Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
   return TRUE;
 }
 
-BOOLEAN EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
+UCHAR EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
 {
   UNREFERENCED_PARAMETER(MessageID);
 
@@ -103,7 +103,7 @@ BOOLEAN EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
 
     pDeviceContext->PdStateMachineIndex = 7;
     pDeviceContext->State3              = 4;
-    pDeviceContext->IncomingPdHandled   = TRUE;
+    pDeviceContext->State0   = TRUE;
     pDeviceContext->Polarity            = 0;
     pDeviceContext->PowerSource         = 2;
 
@@ -119,7 +119,7 @@ BOOLEAN EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
       "PMIC2 EOI: PdStateMachineIndex = %u, IncomingPdHandled = %!bool!, "
       "PowerSource = %u, "
       "State3 = %u, State9 = %u, Polarity = %u, IncomingPdMessageState = %u",
-      pDeviceContext->PdStateMachineIndex, pDeviceContext->IncomingPdHandled,
+      pDeviceContext->PdStateMachineIndex, pDeviceContext->State0,
       pDeviceContext->PowerSource, pDeviceContext->State3,
       pDeviceContext->State9, pDeviceContext->Polarity,
       pDeviceContext->IncomingPdMessageState);
