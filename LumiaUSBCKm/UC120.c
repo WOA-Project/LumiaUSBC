@@ -13,7 +13,7 @@ NTSTATUS UC120_UploadCalibrationData(
     unsigned int length)
 {
   NTSTATUS status = STATUS_SUCCESS;
-#if 1
+
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
       "UC120_UploadCalibrationData Entry");
@@ -104,11 +104,6 @@ NTSTATUS UC120_UploadCalibrationData(
   }
 
 exit:
-#else
-  UNREFERENCED_PARAMETER(deviceContext);
-  UNREFERENCED_PARAMETER(calibrationFile);
-  UNREFERENCED_PARAMETER(length);
-#endif
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
@@ -478,7 +473,7 @@ Uc120_Ioctl_EnableGoodCRC(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
   int *    Buf;
   size_t   BufSize;
   int      IncomingBit;
-  int      Bit = 0;
+  UCHAR      Bit = 0;
 
   Status = WdfRequestRetrieveInputBuffer(Request, 4, &Buf, &BufSize);
   if (!NT_SUCCESS(Status)) {
