@@ -474,45 +474,189 @@ exit:
 NTSTATUS
 Uc120_Ioctl_EnableGoodCRC(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
 {
-  UNREFERENCED_PARAMETER(Request);
-  UNREFERENCED_PARAMETER(DeviceContext);
+  NTSTATUS Status;
+  int *    Buf;
+  size_t   BufSize;
+  int      IncomingBit;
+  int      Bit = 0;
 
-  return STATUS_NOT_IMPLEMENTED;
+  Status = WdfRequestRetrieveInputBuffer(Request, 4, &Buf, &BufSize);
+  if (!NT_SUCCESS(Status)) {
+    WdfRequestComplete(Request, Status);
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_EnableGoodCRC: WdfRequestRetrieveInputBuffer failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+  IncomingBit = *Buf;
+  if (IncomingBit) {
+    if (IncomingBit != 1) {
+      Status = STATUS_INVALID_PARAMETER;
+      WdfRequestComplete(Request, Status);
+      TraceEvents(
+          TRACE_LEVEL_ERROR, TRACE_DRIVER,
+          "Uc120_Ioctl_EnableGoodCRC: Unknown role bit");
+      goto exit;
+    }
+
+    Bit = 1;
+  }
+  else {
+    Bit = 0;
+  }
+
+  DeviceContext->Register4 = DeviceContext->Register4 & 0x7F | (Bit << 7);
+  Status = WriteRegister(DeviceContext, 4, &DeviceContext->Register4, 1);
+
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_EnableGoodCRC: WriteRegister failed "
+        "%!STATUS!",
+        Status);
+  }
+
+  WdfRequestCompleteWithInformation(Request, Status, 4);
+
+exit:
+  return Status;
 }
 
 NTSTATUS
 Uc120_Ioctl_ExecuteHardReset(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
 {
-  UNREFERENCED_PARAMETER(Request);
-  UNREFERENCED_PARAMETER(DeviceContext);
+  NTSTATUS Status;
 
-  return STATUS_NOT_IMPLEMENTED;
+  DeviceContext->Register0 = 0x20;
+  Status = WriteRegister(DeviceContext, 0, &DeviceContext->Register0, 1);
+
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_ExecuteHardReset: WriteRegister failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+exit:
+  WdfRequestComplete(Request, Status);
+  return Status;
 }
 
 NTSTATUS
 Uc120_Ioctl_IsCableConnected(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
 {
-  UNREFERENCED_PARAMETER(Request);
-  UNREFERENCED_PARAMETER(DeviceContext);
+  NTSTATUS Status;
+  int *    OutBuf;
+  size_t   BufSize;
 
-  return STATUS_NOT_IMPLEMENTED;
+  Status = WdfRequestRetrieveOutputBuffer(Request, 16, &OutBuf, &BufSize);
+  if (!NT_SUCCESS(Status)) {
+    WdfRequestComplete(Request, Status);
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_IsCableConnected: WdfRequestRetrieveOutputBuffer failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+  ASSERT(OutBuf != NULL);
+
+  OutBuf[0] = DeviceContext->PowerSource;
+  OutBuf[1] = DeviceContext->PdStateMachineIndex;
+  OutBuf[2] = DeviceContext->State3;
+  OutBuf[3] = DeviceContext->Polarity;
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+      "Uc120_Ioctl_IsCableConnected: %d %d %d %d", OutBuf[0], OutBuf[1],
+      OutBuf[2], OutBuf[3]);
+
+  WdfRequestCompleteWithInformation(Request, Status, 16);
+
+exit:
+  return Status;
 }
 
 NTSTATUS Uc120_Ioctl_SetVConnRoleSwitch(
     PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
 {
-  UNREFERENCED_PARAMETER(Request);
-  UNREFERENCED_PARAMETER(DeviceContext);
+  NTSTATUS Status;
+  int *    Buf;
+  int      IncomingBit = 0;
+  size_t   BufSize;
 
-  return STATUS_NOT_IMPLEMENTED;
+  if (DeviceContext->State0) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_SetVConnRoleSwitch: Invalid device state: State0: %u",
+        DeviceContext->State0);
+    Status = STATUS_INVALID_DEVICE_STATE;
+    goto exit;
+  }
+
+  Status = WdfRequestRetrieveInputBuffer(Request, 4, &Buf, &BufSize);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_SetVConnRoleSwitch: WdfRequestRetrieveInputBuffer failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+  IncomingBit = *Buf;
+  if (IncomingBit && IncomingBit != 1) {
+    Status = STATUS_INVALID_PARAMETER;
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_SetVConnRoleSwitch: Unknown role bit");
+    goto exit;
+  }
+
+  Status = ReadRegister(DeviceContext, 5, &DeviceContext->Register5, 1);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "Uc120_Ioctl_SetVConnRoleSwitch: ReadRegister R5 failed "
+        "%!STATUS!",
+        Status);
+    goto exit;
+  }
+
+  if (!IncomingBit && !(DeviceContext->Register5 & 0x20)) {
+    // Nothing to do
+    goto exit;
+  }
+
+  if (IncomingBit != 1 || !(DeviceContext->Register5 & 0x20)) {
+    Status = UC120_SetVConn(DeviceContext, IncomingBit != 0);
+    if (!NT_SUCCESS(Status)) {
+      TraceEvents(
+          TRACE_LEVEL_ERROR, TRACE_DRIVER,
+          "Uc120_Ioctl_SetVConnRoleSwitch: UC120_SetVConn failed "
+          "%!STATUS!",
+          Status);
+      goto exit;
+    }
+  }
+
+exit:
+  WdfRequestComplete(Request, Status);
+  return Status;
 }
 
 NTSTATUS Uc120_Ioctl_ReportNewPowerRole(
     PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
 {
   NTSTATUS Status;
-  int *    Buf;
   int      IncomingRole;
+  int *    Buf;
   size_t   BufSize;
 
   UCHAR Bit0 = 0, Bit6 = 0;
@@ -593,7 +737,7 @@ NTSTATUS Uc120_Ioctl_ReportNewPowerRole(
         "%!STATUS!",
         Status);
   }
-  
+
 exit:
   WdfRequestComplete(Request, Status);
   return Status;
