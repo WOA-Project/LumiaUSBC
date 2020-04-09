@@ -15,7 +15,6 @@ Environment:
 --*/
 
 #include "public.h"
-#include <UcmCx.h>
 
 EXTERN_C_START
 
@@ -28,26 +27,23 @@ DEFINE_GUID(
 // a WDM device extension in the driver frameworks
 //
 typedef struct _DEVICE_CONTEXT {
-  WDFDEVICE     Device;
-  UCMCONNECTOR  Connector;
-  POHANDLE      PoHandle;
+  WDFDEVICE Device;
+
   LARGE_INTEGER SpiId;
   WDFIOTARGET   Spi;
-  LARGE_INTEGER VbusGpioId;
-  WDFIOTARGET   VbusGpio;
-  LARGE_INTEGER PolGpioId;
-  WDFIOTARGET   PolGpio;
-  LARGE_INTEGER AmselGpioId;
-  WDFIOTARGET   AmselGpio;
-  LARGE_INTEGER EnGpioId;
-  WDFIOTARGET   EnGpio;
-  WDFINTERRUPT  PlugDetectInterrupt;
-  WDFINTERRUPT  Uc120Interrupt;
-  WDFINTERRUPT  PmicInterrupt1;
-  WDFINTERRUPT  PmicInterrupt2;
-  BOOLEAN       Connected;
 
-  WDFWAITLOCK DeviceWaitLock;
+  WDFINTERRUPT PlugDetectInterrupt;
+  WDFINTERRUPT Uc120Interrupt;
+  WDFINTERRUPT PmicInterrupt1;
+  WDFINTERRUPT PmicInterrupt2;
+
+  WDFWAITLOCK   DeviceWaitLock;
+  WDFCOLLECTION DeviceCollection;
+
+  WDFQUEUE DefaultQueue;
+  WDFQUEUE DeviceIoQueue;
+  WDFQUEUE PdMessageInQueue;
+  WDFQUEUE PdMessageOutQueue;
 
   USHORT  PdStateMachineIndex;
   UCHAR   State3;
@@ -55,7 +51,7 @@ typedef struct _DEVICE_CONTEXT {
   BOOLEAN IncomingPdHandled;
   UCHAR   PowerSource;
   UCHAR   Polarity;
-  UCHAR   IncomingPdMessageState;
+  CHAR   IncomingPdMessageState;
   KEVENT  PdEvent;
 
   UCHAR Register0;
@@ -69,18 +65,12 @@ typedef struct _DEVICE_CONTEXT {
   UCHAR Register13;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
-typedef struct _CONNECTOR_CONTEXT {
-  UCM_TYPEC_PARTNER partner;
-
-} CONNECTOR_CONTEXT, *PCONNECTOR_CONTEXT;
-
 //
 // This macro will generate an inline function called DeviceGetContext
 // which will be used to get a pointer to the device context memory
 // in a type safe manner.
 //
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)
-WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(CONNECTOR_CONTEXT, ConnectorGetContext)
 
 //
 // Function to initialize the device and its callbacks
@@ -90,28 +80,25 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit);
 
 #define UC120_CALIBRATIONFILE_SIZE 11
 
-EVT_WDF_DEVICE_PREPARE_HARDWARE     LumiaUSBCDevicePrepareHardware;
-EVT_WDF_DEVICE_RELEASE_HARDWARE     LumiaUSBCDeviceReleaseHardware;
-EVT_UCM_CONNECTOR_SET_DATA_ROLE     LumiaUSBCSetDataRole;
-EVT_WDF_DEVICE_D0_ENTRY             LumiaUSBCDeviceD0Entry;
-EVT_WDF_DEVICE_D0_EXIT              LumiaUSBCDeviceD0Exit;
-EVT_WDF_DEVICE_SELF_MANAGED_IO_INIT LumiaUSBCSelfManagedIoInit;
+EVT_WDF_DEVICE_PREPARE_HARDWARE    LumiaUSBCDevicePrepareHardware;
+EVT_WDF_DEVICE_D0_ENTRY            LumiaUSBCDeviceD0Entry;
+EVT_WDF_INTERRUPT_ISR              EvtPlugDetInterruptIsr;
+EVT_WDF_INTERRUPT_ISR              EvtUc120InterruptIsr;
+EVT_WDF_INTERRUPT_ISR              EvtPmicInterrupt1Isr;
+EVT_WDF_INTERRUPT_ISR              EvtPmicInterrupt2Isr;
+EVT_WDF_INTERRUPT_WORKITEM         PmicInterrupt1WorkItem;
+EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL EvtUc120Ioctl;
+EVT_WDF_IO_QUEUE_IO_WRITE          EvtPdQueueWrite;
 
 NTSTATUS LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit);
 
-EVT_WDF_INTERRUPT_ISR EvtPlugDetInterruptIsr;
-EVT_WDF_INTERRUPT_ISR EvtUc120InterruptIsr;
-EVT_WDF_INTERRUPT_ISR EvtPmicInterrupt1Isr;
-EVT_WDF_INTERRUPT_ISR EvtPmicInterrupt2Isr;
-
-EVT_WDF_INTERRUPT_WORKITEM PmicInterrupt1WorkItem;
-
 NTSTATUS
 Uc120InterruptEnable(WDFINTERRUPT Interrupt, WDFDEVICE AssociatedDevice);
+
 NTSTATUS
 Uc120InterruptDisable(WDFINTERRUPT Interrupt, WDFDEVICE AssociatedDevice);
 
-NTSTATUS OpenIOTarget(
+NTSTATUS LumiaUSBCOpenIOTarget(
     PDEVICE_CONTEXT ctx, LARGE_INTEGER res, ACCESS_MASK use,
     WDFIOTARGET *target);
 
@@ -120,10 +107,26 @@ NTSTATUS LumiaUSBCProbeResources(
     WDFCMRESLIST ResourcesRaw);
 
 NTSTATUS LumiaUSBCOpenResources(PDEVICE_CONTEXT ctx);
-void     LumiaUSBCCloseResources(PDEVICE_CONTEXT ctx);
+
+NTSTATUS LumiaUSBCInitializeIoQueue(WDFDEVICE Device);
 
 NTSTATUS
-LumiaUSBCSetPowerRole(UCMCONNECTOR Connector, UCM_POWER_ROLE PowerRole);
+Uc120_Ioctl_EnableGoodCRC(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request);
+
+NTSTATUS
+Uc120_Ioctl_ExecuteHardReset(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request);
+
+NTSTATUS
+Uc120_Ioctl_IsCableConnected(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request);
+
+NTSTATUS Uc120_Ioctl_SetVConnRoleSwitch(
+    PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request);
+
+NTSTATUS Uc120_Ioctl_ReportNewPowerRole(
+    PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request);
+
+NTSTATUS Uc120_Ioctl_ReportNewDataRole(
+    PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request);
 
 #define AFFINITY_MASK(n) ((ULONG_PTR)1 << (n))
 

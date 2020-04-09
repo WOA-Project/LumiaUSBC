@@ -7,7 +7,6 @@
 #endif
 
 #include <UC120Registers.h>
-#include <USBRole.h>
 
 void PmicInterrupt1WorkItem(WDFINTERRUPT Interrupt, WDFOBJECT AssociatedObject)
 {

@@ -11,9 +11,7 @@
 #include <Registry.h>
 #include <SPI.h>
 #include <UC120.h>
-#include <Uc120GPIO.h>
 #include <WorkItems.h>
-#include <USBRole.h>
 
 #include "Interrupt.tmh"
 
@@ -59,38 +57,6 @@ BOOLEAN EvtUc120InterruptIsr(WDFINTERRUPT Interrupt, ULONG MessageID)
       pDeviceContext->IncomingPdMessageState);
 
   WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
-
-    // Change state for charging (at least now)
-  if (pDeviceContext->PowerSource == 1 || pDeviceContext->PowerSource == 2) {
-    if (pDeviceContext->Connected) {
-      Status = USBC_Detach(pDeviceContext);
-    }
-
-    Status = USBC_ChangeRole(
-        pDeviceContext, UcmTypeCPartnerPoweredCableNoUfp,
-        pDeviceContext->Polarity - 1);
-    if (!NT_SUCCESS(Status)) {
-      TraceEvents(
-          TRACE_LEVEL_ERROR, TRACE_INTERRUPT,
-          "Failed to set USB Role: %!STATUS!", Status);
-
-      goto Exit;
-    }
-    else {
-      TraceEvents(
-          TRACE_LEVEL_INFORMATION, TRACE_INTERRUPT, "Charging status is set");
-    }
-
-    pDeviceContext->Connected = TRUE;
-  }
-
-  EvtPmicInterrupt2Isr(Interrupt, MessageID);
-  pDeviceContext->Register1 = 0x20;
-  WriteRegister(
-      pDeviceContext, 1, &pDeviceContext->Register1,
-      sizeof(pDeviceContext->Register1));
-
-Exit:
   return TRUE;
 }
 

@@ -2,14 +2,11 @@
 #include <Registry.h>
 #include <SPI.h>
 #include <UC120.h>
-#include <USBRole.h>
 #include <wchar.h>
 
 #ifndef DBG_PRINT_EX_LOGGING
 #include "UC120.tmh"
 #endif
-
-#include <UC120Registers.h>
 
 NTSTATUS UC120_UploadCalibrationData(
     PDEVICE_CONTEXT deviceContext, unsigned char *calibrationFile,
@@ -353,24 +350,24 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
         break;
       case 2:
         IsPowerSource = FALSE;
-        State = 1;
+        State         = 1;
         break;
       case 3:
         IsPowerSource = FALSE;
-        State = 3;
+        State         = 3;
         break;
       case 5:
         State         = 0;
         IsPowerSource = TRUE;
         break;
       case 6:
-        State    = 5;
-        Polarity = 0;
+        State         = 5;
+        Polarity      = 0;
         IsPowerSource = FALSE;
         break;
       case 7:
-        State    = 4;
-        Polarity = 0;
+        State         = 4;
+        Polarity      = 0;
         IsPowerSource = FALSE;
         break;
       case 8:
@@ -458,7 +455,8 @@ exit:
   return Status;
 }
 
-NTSTATUS UC120_ReadIncomingMessageStatus(PDEVICE_CONTEXT DeviceContext) {
+NTSTATUS UC120_ReadIncomingMessageStatus(PDEVICE_CONTEXT DeviceContext)
+{
   NTSTATUS Status = STATUS_SUCCESS;
   Status          = ReadRegister(
       DeviceContext, 2, &DeviceContext->Register1,
@@ -471,4 +469,58 @@ NTSTATUS UC120_ReadIncomingMessageStatus(PDEVICE_CONTEXT DeviceContext) {
 
 exit:
   return Status;
+}
+
+NTSTATUS
+Uc120_Ioctl_EnableGoodCRC(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
+{
+  UNREFERENCED_PARAMETER(Request);
+  UNREFERENCED_PARAMETER(DeviceContext);
+
+  return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+Uc120_Ioctl_ExecuteHardReset(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
+{
+  UNREFERENCED_PARAMETER(Request);
+  UNREFERENCED_PARAMETER(DeviceContext);
+
+  return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+Uc120_Ioctl_IsCableConnected(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
+{
+  UNREFERENCED_PARAMETER(Request);
+  UNREFERENCED_PARAMETER(DeviceContext);
+
+  return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS Uc120_Ioctl_SetVConnRoleSwitch(
+    PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
+{
+  UNREFERENCED_PARAMETER(Request);
+  UNREFERENCED_PARAMETER(DeviceContext);
+
+  return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS Uc120_Ioctl_ReportNewPowerRole(
+    PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
+{
+  UNREFERENCED_PARAMETER(Request);
+  UNREFERENCED_PARAMETER(DeviceContext);
+
+  return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS
+Uc120_Ioctl_ReportNewDataRole(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
+{
+  UNREFERENCED_PARAMETER(Request);
+  UNREFERENCED_PARAMETER(DeviceContext);
+
+  return STATUS_NOT_IMPLEMENTED;
 }

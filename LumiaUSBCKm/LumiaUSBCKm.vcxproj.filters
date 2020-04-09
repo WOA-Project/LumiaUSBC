@@ -45,10 +45,10 @@
     <ClCompile Include="WorkItems.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="USBRole.c">
+    <ClCompile Include="Interrupt.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Interrupt.c">
+    <ClCompile Include="Queue.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
