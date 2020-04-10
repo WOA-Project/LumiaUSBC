@@ -308,10 +308,10 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
     if (!NT_SUCCESS(Status))
       goto exit;
 
-    Role  = (DeviceContext->Register2 & 0x3c) >> 2;
-    State = 3;
+    Role = (DeviceContext->Register2 & 0x3c) >> 2;
 
     if (Role) {
+      State     = 3;
       Polarity  = (DeviceContext->Register7 & 0x40) ? 2 : 1;
       CableType = (DeviceContext->Register7 >> 4) & 3;
 
@@ -325,17 +325,20 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
       case 3:
         State = 2;
         break;
+      default:
+        State = 3;
+        break;
       }
 
       switch (Role) {
       case 1:
       case 4:
+        // PD case?
         if (!DeviceContext->State0) {
-          // Handle PD
           Uc120_Ioctl_ServeOther(DeviceContext, 1, 2, 7, 4, 0);
           DeviceContext->PowerSource         = 2;
           DeviceContext->PdStateMachineIndex = 7;
-          DeviceContext->State0              = TRUE;
+          DeviceContext->State0              = 1;
           DeviceContext->Polarity            = 0;
           DeviceContext->State3              = 4;
           UC120_ToggleReg4Bit1(DeviceContext, TRUE);
@@ -343,30 +346,31 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
           UC120_SetPowerRole(DeviceContext, FALSE);
         }
         break;
+        // Case 2 and 3 toggles VCONN
       case 2:
-        IsPowerSource = FALSE;
+        IsPowerSource = 0;
         State         = 1;
         break;
       case 3:
-        IsPowerSource = FALSE;
+        IsPowerSource = 0;
         State         = 3;
         break;
       case 5:
         State         = 0;
-        IsPowerSource = TRUE;
+        IsPowerSource = 1;
         break;
       case 6:
         State         = 5;
         Polarity      = 0;
-        IsPowerSource = FALSE;
+        IsPowerSource = 0;
         break;
       case 7:
         State         = 4;
         Polarity      = 0;
-        IsPowerSource = FALSE;
+        IsPowerSource = 0;
         break;
       case 8:
-        IsPowerSource = TRUE;
+        IsPowerSource = 1;
         State         = 6;
         break;
       }
@@ -383,8 +387,9 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
       }
 
       if (DeviceContext->State0) {
-        Uc120_Ioctl_ServeOther(DeviceContext, 0, IsPowerSource, State, State, Polarity);
-        DeviceContext->State0              = FALSE;
+        Uc120_Ioctl_ServeOther(
+            DeviceContext, 0, IsPowerSource, State, State, Polarity);
+        DeviceContext->State0              = 0;
         DeviceContext->PowerSource         = IsPowerSource;
         DeviceContext->Polarity            = Polarity;
         DeviceContext->PdStateMachineIndex = State;
@@ -393,25 +398,29 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
     }
 
     Reg2B6 = DeviceContext->Register2 >> 6;
-    switch (Reg2B6) {
-    case 1:
-      State3 = 0;
-      break;
-    case 2:
-      State3 = 1;
-      break;
-    case 3:
-      State3 = 2;
-      break;
-    }
+    if (Reg2B6) {
+      switch (Reg2B6) {
+      case 1:
+        State3 = 0;
+        break;
+      case 2:
+        State3 = 1;
+        break;
+      case 3:
+        State3 = 2;
+        break;
+      default:
+        State3 = 4;
+        break;
+      }
 
-    if (State3 == DeviceContext->State3) {
-      goto exit;
+      if (State3 == DeviceContext->State3) {
+        goto exit;
+      }
+
+      Uc120_Ioctl_ServeOther(DeviceContext, 2, 2, 7, State3, 0);
+      DeviceContext->State3 = State3;
     }
-    
-    Uc120_Ioctl_ServeOther(
-        DeviceContext, 2, 2, 7, State3, 0);
-    DeviceContext->State3 = State3;
   }
 
   if (DeviceContext->Register2 && 2) {

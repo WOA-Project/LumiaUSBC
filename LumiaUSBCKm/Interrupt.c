@@ -104,9 +104,9 @@ UCHAR EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
 
     pDeviceContext->PdStateMachineIndex = 7;
     pDeviceContext->State3              = 4;
-    pDeviceContext->State0   = TRUE;
-    pDeviceContext->Polarity            = 0;
+    pDeviceContext->State0              = 1;
     pDeviceContext->PowerSource         = 2;
+    pDeviceContext->Polarity            = 0;
 
     UC120_ToggleReg4Bit1(pDeviceContext, TRUE);
   }
