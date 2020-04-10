@@ -126,10 +126,14 @@ VOID EvtUc120Ioctl(
         "EvtUc120Ioctl - 0x22c006");
     break;
   default:
+    // Forwarded
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
-        "EvtUc120Ioctl - Unsupported IOCTL 0x%x", IoControlCode);
-    WdfRequestComplete(Request, STATUS_NOT_SUPPORTED);
+        "EvtUc120Ioctl - Forward IOCTL 0x%x", IoControlCode);
+    Status = WdfRequestForwardToIoQueue(Request, pDeviceContext->DeviceIoQueue);
+    if (!NT_SUCCESS(Status)) {
+      WdfRequestComplete(Request, Status);
+    }
     break;
   }
 

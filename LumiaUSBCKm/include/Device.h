@@ -38,7 +38,7 @@ typedef struct _DEVICE_CONTEXT {
   WDFINTERRUPT PmicInterrupt2;
 
   WDFWAITLOCK   DeviceWaitLock;
-  WDFCOLLECTION DeviceCollection;
+  WDFCOLLECTION DevicePendingIoReqCollection;
 
   WDFQUEUE DefaultQueue;
   WDFQUEUE DeviceIoQueue;
@@ -127,6 +127,10 @@ NTSTATUS Uc120_Ioctl_ReportNewPowerRole(
 
 NTSTATUS Uc120_Ioctl_ReportNewDataRole(
     PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request);
+
+NTSTATUS Uc120_Ioctl_ServeOther(
+    PDEVICE_CONTEXT DeviceContext, int Flag, int State0, int State1, int Role,
+    int Polarity);
 
 #define AFFINITY_MASK(n) ((ULONG_PTR)1 << (n))
 

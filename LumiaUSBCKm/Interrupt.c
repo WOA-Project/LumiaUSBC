@@ -100,6 +100,7 @@ UCHAR EvtPmicInterrupt2Isr(WDFINTERRUPT Interrupt, ULONG MessageID)
         sizeof(pDeviceContext->Register5));
 
     WdfWaitLockRelease(pDeviceContext->DeviceWaitLock);
+    Uc120_Ioctl_ServeOther(pDeviceContext, 1, 2, 7, 4, 0);
 
     pDeviceContext->PdStateMachineIndex = 7;
     pDeviceContext->State3              = 4;

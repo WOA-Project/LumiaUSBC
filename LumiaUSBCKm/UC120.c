@@ -332,7 +332,7 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
       case 4:
         if (!DeviceContext->State0) {
           // Handle PD
-          // 406c8c
+          Uc120_Ioctl_ServeOther(DeviceContext, 1, 2, 7, 4, 0);
           DeviceContext->PowerSource         = 2;
           DeviceContext->PdStateMachineIndex = 7;
           DeviceContext->State0              = TRUE;
@@ -383,7 +383,7 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
       }
 
       if (DeviceContext->State0) {
-        // 406c8c
+        Uc120_Ioctl_ServeOther(DeviceContext, 0, IsPowerSource, State, State, Polarity);
         DeviceContext->State0              = FALSE;
         DeviceContext->PowerSource         = IsPowerSource;
         DeviceContext->Polarity            = Polarity;
@@ -408,7 +408,9 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
     if (State3 == DeviceContext->State3) {
       goto exit;
     }
-    // 406c8c
+    
+    Uc120_Ioctl_ServeOther(
+        DeviceContext, 2, 2, 7, State3, 0);
     DeviceContext->State3 = State3;
   }
 
@@ -473,7 +475,7 @@ Uc120_Ioctl_EnableGoodCRC(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
   int *    Buf;
   size_t   BufSize;
   int      IncomingBit;
-  UCHAR      Bit = 0;
+  UCHAR    Bit = 0;
 
   Status = WdfRequestRetrieveInputBuffer(Request, 4, &Buf, &BufSize);
   if (!NT_SUCCESS(Status)) {
@@ -786,5 +788,73 @@ Uc120_Ioctl_ReportNewDataRole(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
   WdfRequestCompleteWithInformation(Request, Status, 4);
 
 exit:
+  return Status;
+}
+
+NTSTATUS Uc120_Ioctl_ServeOther(
+    PDEVICE_CONTEXT DeviceContext, int Flag, int State0, int State1, int Role,
+    int Polarity)
+{
+  NTSTATUS   Status = STATUS_SUCCESS;
+  WDFREQUEST Request;
+  ULONG      PendingReqCount = 0;
+
+  int *  Buf;
+  size_t BufSize;
+
+  if (DeviceContext->State9) {
+    Status =
+        WdfIoQueueRetrieveNextRequest(DeviceContext->DeviceIoQueue, &Request);
+    if (NT_SUCCESS(Status)) {
+      do {
+        Status = WdfCollectionAdd(
+            DeviceContext->DevicePendingIoReqCollection, Request);
+        Status = WdfIoQueueRetrieveNextRequest(
+            DeviceContext->DeviceIoQueue, &Request);
+      } while (NT_SUCCESS(Status));
+    }
+
+    PendingReqCount =
+        WdfCollectionGetCount(DeviceContext->DevicePendingIoReqCollection);
+    if (PendingReqCount) {
+      do {
+        Request = (WDFREQUEST)WdfCollectionGetFirstItem(
+            DeviceContext->DevicePendingIoReqCollection);
+        Status = WdfRequestRetrieveOutputBuffer(Request, 20, &Buf, &BufSize);
+        if (NT_SUCCESS(Status)) {
+
+          // This is weird
+          if (Flag == 2) {
+            Buf[0] = Flag;
+            Buf[1] = Role;
+            Buf[2] = 0;
+            Buf[3] = 0;
+            Buf[4] = 0;
+          }
+          else {
+            Buf[0] = Flag;
+            Buf[1] = State0;
+            Buf[2] = State1;
+            Buf[3] = Role;
+            Buf[4] = Polarity;
+          }
+
+          WdfRequestCompleteWithInformation(Request, Status, 20);
+        }
+        else {
+          TraceEvents(
+              TRACE_LEVEL_ERROR, TRACE_DRIVER,
+              "Uc120_Ioctl_ServeOther: WdfRequestRetrieveOutputBuffer failed "
+              "%!STATUS!",
+              Status);
+          WdfRequestComplete(Request, Status);
+        }
+        WdfCollectionRemove(
+            DeviceContext->DevicePendingIoReqCollection, Request);
+        PendingReqCount--;
+      } while (PendingReqCount);
+    }
+  }
+
   return Status;
 }

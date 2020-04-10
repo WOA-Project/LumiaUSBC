@@ -259,7 +259,7 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
     WDF_OBJECT_ATTRIBUTES_INIT(&ObjAttrib);
     ObjAttrib.ParentObject = Device;
 
-    Status = WdfCollectionCreate(&ObjAttrib, &DeviceContext->DeviceCollection);
+    Status = WdfCollectionCreate(&ObjAttrib, &DeviceContext->DevicePendingIoReqCollection);
     if (!NT_SUCCESS(Status)) {
       TraceEvents(
           TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
