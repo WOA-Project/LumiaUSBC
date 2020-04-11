@@ -388,7 +388,7 @@ NTSTATUS UC120_HandleInterrupt(PDEVICE_CONTEXT DeviceContext)
 
       if (DeviceContext->State0) {
         Uc120_Ioctl_ServeOther(
-            DeviceContext, 0, IsPowerSource, State, State, Polarity);
+            DeviceContext, 0, IsPowerSource, Role, State, Polarity);
         DeviceContext->State0              = 0;
         DeviceContext->PowerSource         = IsPowerSource;
         DeviceContext->Polarity            = Polarity;
@@ -913,9 +913,9 @@ NTSTATUS Uc120_Ioctl_ServeOther(
           if (Flag == 2) {
             Buf[0] = Flag;
             Buf[1] = Role;
-            Buf[2] = 0;
-            Buf[3] = 0;
-            Buf[4] = 0;
+            Buf[2] = State1;
+            Buf[3] = Role;
+            Buf[4] = Polarity;
           }
           else {
             Buf[0] = Flag;

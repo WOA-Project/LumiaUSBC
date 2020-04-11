@@ -37,6 +37,9 @@ NTSTATUS ReadRegisterFullDuplex(
   WDF_MEMORY_DESCRIPTOR SpbTransferListMemoryDescriptor;
   WDF_REQUEST_SEND_OPTIONS RequestOptions;
 
+  LARGE_INTEGER Interval;
+  int         Retries = 3;
+
   // One register write and read
   SPB_TRANSFER_LIST_AND_ENTRIES(2) Sequence;
   SPB_TRANSFER_LIST_INIT(&(Sequence.List), 2);
@@ -91,9 +94,15 @@ NTSTATUS ReadRegisterFullDuplex(
       &RequestOptions, WDF_REQUEST_SEND_OPTION_TIMEOUT);
   RequestOptions.Timeout = WDF_REL_TIMEOUT_IN_MS(561);
 
-  status = WdfIoTargetSendIoctlSynchronously(
-      pContext->Spi, NULL, IOCTL_SPB_FULL_DUPLEX,
-      &SpbTransferListMemoryDescriptor, NULL, &RequestOptions, NULL);
+  Interval.QuadPart = 0xFFFFFFFFFFFFD8F0;
+
+  do {
+    status = WdfIoTargetSendIoctlSynchronously(
+        pContext->Spi, NULL, IOCTL_SPB_FULL_DUPLEX,
+        &SpbTransferListMemoryDescriptor, NULL, &RequestOptions, NULL);
+
+    Retries--;
+  } while ((!NT_SUCCESS(status)) && Retries >= 0);
 
   if (!NT_SUCCESS(status)) {
     TraceEvents(
