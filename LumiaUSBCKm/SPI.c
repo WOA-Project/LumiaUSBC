@@ -41,9 +41,6 @@ NTSTATUS ReadRegisterFullDuplex(
   SPB_TRANSFER_LIST_AND_ENTRIES(2) Sequence;
   SPB_TRANSFER_LIST_INIT(&(Sequence.List), 2);
 
-  // Take lock
-  WdfObjectAcquireLock(pContext->Device);
-
   // Allocate the memory that holds output buffer
   status = WdfMemoryCreate(
       WDF_NO_OBJECT_ATTRIBUTES, NonPagedPoolNx, '12CU',
@@ -119,7 +116,6 @@ NTSTATUS ReadRegisterFullDuplex(
   }
 
 exit:
-  WdfObjectReleaseLock(pContext->Device);
   return status;
 }
 
@@ -134,9 +130,6 @@ NTSTATUS WriteRegisterFullDuplex(
   ULONG                    SpbTransferOutputMemorySize = 1 + Length;
   UCHAR *                  pSpbTransferOutputMemory    = NULL;
   WDF_REQUEST_SEND_OPTIONS RequestOptions;
-
-  // Take Lock
-  WdfObjectAcquireLock(pContext->Device);
 
   // Allocate the memory that holds output buffer
   status = WdfMemoryCreate(
@@ -181,6 +174,5 @@ NTSTATUS WriteRegisterFullDuplex(
   }
 
 exit:
-  WdfObjectReleaseLock(pContext->Device);
   return status;
 }
