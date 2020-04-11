@@ -44,11 +44,23 @@ NTSTATUS LumiaUSBCInitializeIoQueue(WDFDEVICE Device)
     goto Exit;
   }
 
+  Status = WdfDeviceConfigureRequestDispatching(
+      Device, pDeviceContext->PdMessageInQueue, WdfRequestTypeRead);
+  if (!NT_SUCCESS(Status)) {
+    goto Exit;
+  }
+
   WDF_IO_QUEUE_CONFIG_INIT(&QueueConfig, WdfIoQueueDispatchSequential);
   QueueConfig.EvtIoWrite = EvtPdQueueWrite;
 
   Status = WdfIoQueueCreate(
       Device, &QueueConfig, NULL, &pDeviceContext->PdMessageOutQueue);
+  if (!NT_SUCCESS(Status)) {
+    goto Exit;
+  }
+
+  Status = WdfDeviceConfigureRequestDispatching(
+      Device, pDeviceContext->PdMessageOutQueue, WdfRequestTypeWrite);
   if (!NT_SUCCESS(Status)) {
     goto Exit;
   }
