@@ -171,6 +171,7 @@
     <DriverType>KMDF</DriverType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <UcmDriver>false</UcmDriver>
+    <_NT_TARGET_VERSION>0xA000001</_NT_TARGET_VERSION>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-DbgPrintEx|ARM'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>

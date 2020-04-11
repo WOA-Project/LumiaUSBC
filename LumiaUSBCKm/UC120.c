@@ -439,8 +439,13 @@ exit:
 
 NTSTATUS UC120_ProcessIncomingPdMessage(PDEVICE_CONTEXT DeviceContext)
 {
-  NTSTATUS Status = STATUS_SUCCESS;
-  UCHAR    IncomingMessgaeState;
+  NTSTATUS   Status = STATUS_SUCCESS;
+  UCHAR      IncomingMessgaeState;
+  WDFREQUEST PdMessageRequest;
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+      "UC120_ProcessIncomingPdMessage enter");
 
   Status = ReadRegister(
       DeviceContext, 1, &DeviceContext->Register1,
@@ -454,10 +459,27 @@ NTSTATUS UC120_ProcessIncomingPdMessage(PDEVICE_CONTEXT DeviceContext)
     KeSetEvent(&DeviceContext->PdEvent, 0, 0);
   }
   else if (DeviceContext->Register1 & 0x1F || IncomingMessgaeState == 5) {
-    // TODO: Read message
+    Status = WdfIoQueueRetrieveNextRequest(
+        DeviceContext->PdMessageInQueue, &PdMessageRequest);
+    if (NT_SUCCESS(Status)) {
+      if (!IncomingMessgaeState || IncomingMessgaeState == 7) {
+        Uc120_ReadIncomingPdMessage(DeviceContext, PdMessageRequest);
+        if (IncomingMessgaeState == 7) {
+          DeviceContext->IncomingPdMessageState = 6;
+          KeSetEvent(&DeviceContext->PdEvent, 0, 0);
+        }
+      }
+
+      if (IncomingMessgaeState == 5) {
+        WdfRequestComplete(PdMessageRequest, STATUS_BUS_RESET);
+      }
+    }
   }
 
 exit:
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+      "UC120_ProcessIncomingPdMessage exit with %!STATUS!", Status);
   return Status;
 }
 
@@ -465,8 +487,9 @@ NTSTATUS UC120_ReadIncomingMessageStatus(PDEVICE_CONTEXT DeviceContext)
 {
   NTSTATUS Status = STATUS_SUCCESS;
   Status          = ReadRegister(
-      DeviceContext, 2, &DeviceContext->Register1,
+      DeviceContext, 1, &DeviceContext->Register1,
       sizeof(DeviceContext->Register1));
+
   if (!NT_SUCCESS(Status))
     goto exit;
 
@@ -474,6 +497,61 @@ NTSTATUS UC120_ReadIncomingMessageStatus(PDEVICE_CONTEXT DeviceContext)
   KeSetEvent(&DeviceContext->PdEvent, 0, 0);
 
 exit:
+  return Status;
+}
+
+NTSTATUS
+Uc120_ReadIncomingPdMessage(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
+{
+  NTSTATUS Status;
+  size_t   IncomingMessageSize;
+  UCHAR *  IncomingMessage;
+  UCHAR *  OutputBuffer;
+  size_t   ActualOutputBufferSize;
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+      "Uc120_ReadIncomingPdMessage enter");
+
+  IncomingMessageSize = DeviceContext->Register1 & 0x1F;
+  IncomingMessage =
+      ExAllocatePoolWithTag(NonPagedPoolNx, IncomingMessageSize, 'CpyT');
+  if (IncomingMessage == NULL) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER, "ExAllocatePoolWithTag failed");
+    Status = STATUS_NO_MEMORY;
+    goto exit;
+  }
+
+  Status =
+      ReadRegister(DeviceContext, 17, IncomingMessage, IncomingMessageSize);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "ReadRegister R17 failed");
+    goto exit;
+  }
+
+  Status = WdfRequestRetrieveOutputBuffer(
+      Request, IncomingMessageSize, &OutputBuffer, &ActualOutputBufferSize);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfRequestRetrieveOutputBuffer failed");
+    goto exit;
+  }
+
+  RtlCopyMemory(OutputBuffer, IncomingMessage, IncomingMessageSize);
+  WdfRequestCompleteWithInformation(Request, Status, IncomingMessageSize);
+
+  // TODO: Dump message into trace
+
+exit:
+  if (IncomingMessage != NULL) {
+    ExFreePoolWithTag(IncomingMessage, 'CpyT');
+  }
+  if (!NT_SUCCESS(Status)) {
+    WdfRequestComplete(Request, Status);
+  }
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+      "Uc120_ReadIncomingPdMessage exit %!STATUS!", Status);
   return Status;
 }
 
@@ -831,7 +909,6 @@ NTSTATUS Uc120_Ioctl_ServeOther(
             DeviceContext->DevicePendingIoReqCollection);
         Status = WdfRequestRetrieveOutputBuffer(Request, 20, &Buf, &BufSize);
         if (NT_SUCCESS(Status)) {
-
           // This is weird
           if (Flag == 2) {
             Buf[0] = Flag;

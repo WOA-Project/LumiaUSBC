@@ -32,6 +32,7 @@ NTSTATUS LumiaUSBCOpenIOTarget(
   WCHAR                     ReadStringBuffer[260];
 
   TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget Entry");
+  DbgPrintEx(DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCOpenIOTarget entry\n");
 
   RtlInitEmptyUnicodeString(
       &ReadString, ReadStringBuffer, sizeof(ReadStringBuffer));
@@ -66,6 +67,7 @@ NTSTATUS LumiaUSBCOpenIOTarget(
   }
 
 Exit:
+  DbgPrintEx(DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCOpenIOTarget exit: 0x%x\n", status);
   TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "OpenIOTarget Exit");
   return status;
 }
@@ -87,6 +89,8 @@ LumiaUSBCProbeResources(
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "-> LumiaUSBCProbeResources");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCProbeResources entry\n");
 
   ResourceCount = WdfCmResourceListGetCount(ResourcesTranslated);
 
@@ -118,6 +122,9 @@ LumiaUSBCProbeResources(
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- LumiaUSBCProbeResources");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCProbeResources exit: 0x%x\n",
+      Status);
   return Status;
 }
 
@@ -127,6 +134,8 @@ LumiaUSBCOpenResources(PDEVICE_CONTEXT pDeviceContext)
   NTSTATUS status = STATUS_SUCCESS;
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCOpenResources Entry");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCOpenResources entry\n");
 
   status = LumiaUSBCOpenIOTarget(
       pDeviceContext, pDeviceContext->SpiId, GENERIC_READ | GENERIC_WRITE,
@@ -141,6 +150,9 @@ LumiaUSBCOpenResources(PDEVICE_CONTEXT pDeviceContext)
 Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCOpenResources Exit");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL,
+      "LumiaUSBCOpenResources exit: 0x%x\n", status);
   return status;
 }
 
@@ -160,6 +172,8 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCKmCreateDevice Entry");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCKmCreateDevice entry\n");
 
   WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&PnpPowerCallbacks);
   PnpPowerCallbacks.EvtDevicePrepareHardware = LumiaUSBCDevicePrepareHardware;
@@ -297,6 +311,9 @@ Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
       "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL,
+      "LumiaUSBCKmCreateDevice exit: 0x%x\n", Status);
   return Status;
 }
 
@@ -311,6 +328,8 @@ LumiaUSBCDevicePrepareHardware(
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
       "LumiaUSBCDevicePrepareHardware Entry");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCDevicePrepareHardware entry\n");
 
   pDeviceContext = DeviceGetContext(Device);
 
@@ -350,6 +369,9 @@ Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
       "LumiaUSBCDevicePrepareHardware Exit");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL,
+      "LumiaUSBCDevicePrepareHardware exit: 0x%x\n", Status);
   return Status;
 }
 
@@ -379,6 +401,9 @@ LumiaUSBCDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Entry");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL,
+      "LumiaUSBCDeviceD0Entry entry\n");
 
   // Read calibration file
   RtlInitUnicodeString(
@@ -517,6 +542,9 @@ LumiaUSBCDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
   KeDelayExecutionThread(UserMode, TRUE, &Delay);
 
 Exit:
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL,
+      "LumiaUSBCDeviceD0Entry exit: 0x%x\n", Status);
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCDeviceD0Entry Exit");
   return Status;

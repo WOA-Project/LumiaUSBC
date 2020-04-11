@@ -50,6 +50,9 @@ Return Value:
 #endif
 
   TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Entry");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "DriverEntry entry\n");
+
 
   //
   // Register a cleanup callback so that we can call WPP_CLEANUP when
@@ -75,6 +78,9 @@ Return Value:
   }
 
   TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Exit");
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL,
+      "DriverEntry exit: 0x%x\n", status);
 
   return status;
 }
@@ -108,9 +114,12 @@ Return Value:
   PAGED_CODE();
 
   TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Entry");
+  DbgPrintEx(DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCKmEvtDeviceAdd entry\n");
 
   status = LumiaUSBCKmCreateDevice(DeviceInit);
 
+  DbgPrintEx(
+      DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL, "LumiaUSBCKmEvtDeviceAdd exit: 0x%x\n", status);
   TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Exit");
 
   return status;

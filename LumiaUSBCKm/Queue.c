@@ -120,12 +120,11 @@ VOID EvtUc120Ioctl(
     Uc120_Ioctl_ReportNewPowerRole(pDeviceContext, Request);
     break;
   case 0x22c006:
+  default:
     // No need to handle here
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
         "EvtUc120Ioctl - 0x22c006");
-    break;
-  default:
     // Forwarded
     TraceEvents(
         TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
