@@ -9,6 +9,7 @@ ClassGuid   = {4D36E97D-E325-11CE-BFC1-08002BE10318}
 Provider    = %ManufacturerName%
 CatalogFile = LumiaUSBCKm.cat
 DriverVer   = ; TODO: set DriverVer in stampinf property pages
+PnpLockdown = 1
 
 [DestinationDirs]
 DefaultDestDir = 12
@@ -59,5 +60,5 @@ SPSVCINST_ASSOCSERVICE = 0x00000002
 
 ManufacturerName       = "LumiaWoA authors"
 DiskName               = "Lumia USB-C Installation Disk"
-LumiaUSBCKm.DeviceDesc = "Lumia USB-C Device (iteration=37)"
+LumiaUSBCKm.DeviceDesc = "Lumia USB-C Device (iteration=38)"
 LumiaUSBCKm.SVCDESC    = "Lumia USB-C Service"

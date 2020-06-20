@@ -26,7 +26,7 @@ NTSTATUS LocalReadRegistryValue(
     return 0;
 
   len   = sizeof(KEY_VALUE_PARTIAL_INFORMATION) + length;
-  pinfo = ExAllocatePool(NonPagedPool, len);
+  pinfo = ExAllocatePoolWithTag(NonPagedPool, len, 'IgeR');
   rc    = ZwQueryValueKey(
       handle, &valname, KeyValuePartialInformation, pinfo, len, &reslen);
   if ((NT_SUCCESS(rc) || rc == STATUS_BUFFER_OVERFLOW) && pinfo != NULL &&

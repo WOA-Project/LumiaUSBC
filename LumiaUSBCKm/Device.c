@@ -11,6 +11,8 @@
 #include <SPI.h>
 #include <UC120.h>
 #include <WorkItems.h>
+#include <Uc120GPIO.h>
+#include <UsbRole.h>
 
 #ifndef DBG_PRINT_EX_LOGGING
 #include "device.tmh"
@@ -19,7 +21,57 @@
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, LumiaUSBCKmCreateDevice)
 #pragma alloc_text(PAGE, LumiaUSBCDevicePrepareHardware)
+#pragma alloc_text(PAGE, LumiaUSBCDeviceReleaseHardware)
 #endif
+
+void LumiaUSBCCloseResources(PDEVICE_CONTEXT pDeviceContext)
+{
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCCloseResources Entry");
+
+  if (pDeviceContext->Spi) {
+    WdfIoTargetClose(pDeviceContext->Spi);
+  }
+
+  if (pDeviceContext->VbusGpio) {
+    WdfIoTargetClose(pDeviceContext->VbusGpio);
+  }
+
+  if (pDeviceContext->PolGpio) {
+    WdfIoTargetClose(pDeviceContext->PolGpio);
+  }
+
+  if (pDeviceContext->AmselGpio) {
+    WdfIoTargetClose(pDeviceContext->AmselGpio);
+  }
+
+  if (pDeviceContext->EnGpio) {
+    WdfIoTargetClose(pDeviceContext->EnGpio);
+  }
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCCloseResources Exit");
+}
+
+NTSTATUS LumiaUSBCDeviceReleaseHardware(
+    WDFDEVICE Device, WDFCMRESLIST ResourcesTranslated)
+{
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+      "LumiaUSBCDeviceReleaseHardware Entry");
+
+  UNREFERENCED_PARAMETER(ResourcesTranslated);
+
+  PDEVICE_CONTEXT pDeviceContext = DeviceGetContext(Device);
+
+  LumiaUSBCCloseResources(pDeviceContext);
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+      "LumiaUSBCDeviceReleaseHardware Exit");
+
+  return STATUS_SUCCESS;
+}
 
 NTSTATUS LumiaUSBCOpenIOTarget(
     PDEVICE_CONTEXT pDeviceContext, LARGE_INTEGER Resource, ACCESS_MASK AccessMask,
@@ -82,8 +134,16 @@ LumiaUSBCProbeResources(
 
   NTSTATUS                        Status        = STATUS_SUCCESS;
   PCM_PARTIAL_RESOURCE_DESCRIPTOR ResDescriptor = NULL;
+  WDF_INTERRUPT_CONFIG            InterruptConfig;
 
-  UCHAR SpiFound  = FALSE;
+  UCHAR SpiFound       = FALSE;
+  ULONG GpioFound      = 0;
+  ULONG interruptFound = 0;
+
+  ULONG PlugDetInterrupt  = 0;
+  ULONG UC120Interrupt    = 0;
+  ULONG MysteryInterrupt1 = 0;
+  ULONG MysteryInterrupt2 = 0;
 
   ULONG ResourceCount;
 
@@ -99,8 +159,47 @@ LumiaUSBCProbeResources(
 
     switch (ResDescriptor->Type) {
     case CmResourceTypeConnection:
-      // Check for SPI resource
+      // Check for GPIO resource
       if (ResDescriptor->u.Connection.Class ==
+              CM_RESOURCE_CONNECTION_CLASS_GPIO &&
+          ResDescriptor->u.Connection.Type ==
+              CM_RESOURCE_CONNECTION_TYPE_GPIO_IO) {
+        switch (GpioFound) {
+        case 0:
+          DeviceContext->VbusGpioId.LowPart =
+              ResDescriptor->u.Connection.IdLowPart;
+          DeviceContext->VbusGpioId.HighPart =
+              ResDescriptor->u.Connection.IdHighPart;
+          break;
+        case 1:
+          DeviceContext->PolGpioId.LowPart =
+              ResDescriptor->u.Connection.IdLowPart;
+          DeviceContext->PolGpioId.HighPart =
+              ResDescriptor->u.Connection.IdHighPart;
+          break;
+        case 2:
+          DeviceContext->AmselGpioId.LowPart =
+              ResDescriptor->u.Connection.IdLowPart;
+          DeviceContext->AmselGpioId.HighPart =
+              ResDescriptor->u.Connection.IdHighPart;
+          break;
+        case 3:
+          DeviceContext->EnGpioId.LowPart =
+              ResDescriptor->u.Connection.IdLowPart;
+          DeviceContext->EnGpioId.HighPart =
+              ResDescriptor->u.Connection.IdHighPart;
+          break;
+        default:
+          break;
+        }
+
+        DbgPrint(
+            "LumiaUSBC: Found GPIO resource id=%lu index=%lu\n", GpioFound, i);
+
+        GpioFound++;
+      }
+      // Check for SPI resource
+      else if (ResDescriptor->u.Connection.Class ==
               CM_RESOURCE_CONNECTION_CLASS_SERIAL &&
           ResDescriptor->u.Connection.Type ==
               CM_RESOURCE_CONNECTION_TYPE_SERIAL_SPI) {
@@ -114,12 +213,138 @@ LumiaUSBCProbeResources(
         SpiFound = TRUE;
       }
       break;
+    case CmResourceTypeInterrupt:
+      // We've found an interrupt resource.
+
+      switch (interruptFound) {
+      case 0:
+        PlugDetInterrupt = i;
+        break;
+      case 1:
+        UC120Interrupt = i;
+        break;
+      case 2:
+        MysteryInterrupt1 = i;
+        break;
+      case 3:
+        MysteryInterrupt2 = i;
+        break;
+      default:
+        break;
+      }
+
+      TraceEvents(
+          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+          "Found Interrupt resource id=%lu index=%lu", interruptFound, i);
+
+      interruptFound++;
+      break;
     default:
       // We don't care about other descriptors.
       break;
     }
   }
 
+  if (!SpiFound || GpioFound < 4 || interruptFound < 4) {
+    DbgPrint(
+        "LumiaUSBC: Not all resources were found, SPI = %d, GPIO = %d, Interrupts = %d", SpiFound,
+        GpioFound, interruptFound);
+    Status = STATUS_INSUFFICIENT_RESOURCES;
+    goto Exit;
+  }
+
+  // Initialize all interrupts (consistent with IDA result)
+  // UC120
+  WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtUc120InterruptIsr, NULL);
+  InterruptConfig.EvtInterruptEnable  = Uc120InterruptEnable;
+  InterruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
+  InterruptConfig.PassiveHandling     = TRUE;
+  InterruptConfig.InterruptTranslated =
+      WdfCmResourceListGetDescriptor(ResourcesTranslated, UC120Interrupt);
+  InterruptConfig.InterruptRaw =
+      WdfCmResourceListGetDescriptor(ResourcesRaw, UC120Interrupt);
+
+  Status = WdfInterruptCreate(
+      DeviceContext->Device, &InterruptConfig, NULL, &DeviceContext->Uc120Interrupt);
+
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "LumiaUSBCKmCreateDevice WdfInterruptCreate Uc120Interrupt failed: "
+        "%!STATUS!\n",
+        Status);
+    goto Exit;
+  }
+
+  WdfInterruptSetPolicy(
+      DeviceContext->Uc120Interrupt, WdfIrqPolicyAllProcessorsInMachine,
+      WdfIrqPriorityHigh, 0);
+
+  // Plug detection
+  WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtPlugDetInterruptIsr, NULL);
+  InterruptConfig.PassiveHandling = TRUE;
+  InterruptConfig.InterruptTranslated =
+      WdfCmResourceListGetDescriptor(ResourcesTranslated, PlugDetInterrupt);
+  InterruptConfig.InterruptRaw =
+      WdfCmResourceListGetDescriptor(ResourcesRaw, PlugDetInterrupt);
+
+  Status = WdfInterruptCreate(
+      DeviceContext->Device, &InterruptConfig, NULL,
+      &DeviceContext->PlugDetectInterrupt);
+
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "LumiaUSBCKmCreateDevice WdfInterruptCreate PlugDetectInterrupt "
+        "failed: %!STATUS!\n",
+        Status);
+    goto Exit;
+  }
+
+  // PMIC1 Interrupt
+  WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtPmicInterrupt1Isr, NULL);
+  InterruptConfig.PassiveHandling      = TRUE;
+  InterruptConfig.EvtInterruptWorkItem = PmicInterrupt1WorkItem;
+  InterruptConfig.InterruptTranslated =
+      WdfCmResourceListGetDescriptor(ResourcesTranslated, MysteryInterrupt1);
+  InterruptConfig.InterruptRaw =
+      WdfCmResourceListGetDescriptor(ResourcesRaw, MysteryInterrupt1);
+
+  Status = WdfInterruptCreate(
+      DeviceContext->Device, &InterruptConfig, NULL,
+      &DeviceContext->PmicInterrupt1);
+
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "LumiaUSBCKmCreateDevice WdfInterruptCreate PmicInterrupt1 failed: "
+        "%!STATUS!\n",
+        Status);
+    goto Exit;
+  }
+
+  // PMIC2 Interrupt
+  WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtPmicInterrupt2Isr, NULL);
+  InterruptConfig.PassiveHandling = TRUE;
+  InterruptConfig.InterruptTranslated =
+      WdfCmResourceListGetDescriptor(ResourcesTranslated, MysteryInterrupt2);
+  InterruptConfig.InterruptRaw =
+      WdfCmResourceListGetDescriptor(ResourcesRaw, MysteryInterrupt2);
+
+  Status = WdfInterruptCreate(
+      DeviceContext->Device, &InterruptConfig, NULL,
+      &DeviceContext->PmicInterrupt2);
+
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_ERROR, TRACE_DRIVER,
+        "LumiaUSBCKmCreateDevice WdfInterruptCreate PmicInterrupt2 failed: "
+        "%!STATUS!\n",
+        Status);
+    goto Exit;
+  }
+
+  Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "<- LumiaUSBCProbeResources");
   DbgPrintEx(
@@ -147,6 +372,47 @@ LumiaUSBCOpenResources(PDEVICE_CONTEXT pDeviceContext)
     goto Exit;
   }
 
+  	status = LumiaUSBCOpenIOTarget(
+      pDeviceContext, pDeviceContext->VbusGpioId, GENERIC_READ | GENERIC_WRITE,
+      &pDeviceContext->VbusGpio);
+  if (!NT_SUCCESS(status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "OpenIOTarget failed for VBUS GPIO 0x%x", status);
+    goto Exit;
+  }
+
+  status = LumiaUSBCOpenIOTarget(
+      pDeviceContext, pDeviceContext->PolGpioId, GENERIC_READ | GENERIC_WRITE,
+      &pDeviceContext->PolGpio);
+  if (!NT_SUCCESS(status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "OpenIOTarget failed for polarity GPIO 0x%x", status);
+    goto Exit;
+  }
+
+  status = LumiaUSBCOpenIOTarget(
+      pDeviceContext, pDeviceContext->AmselGpioId, GENERIC_READ | GENERIC_WRITE,
+      &pDeviceContext->AmselGpio);
+  if (!NT_SUCCESS(status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "OpenIOTarget failed for alternate mode selection GPIO 0x%x", status);
+    goto Exit;
+  }
+
+  status = LumiaUSBCOpenIOTarget(
+      pDeviceContext, pDeviceContext->EnGpioId, GENERIC_READ | GENERIC_WRITE,
+      &pDeviceContext->EnGpio);
+  if (!NT_SUCCESS(status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "OpenIOTarget failed for mux enable GPIO 0x%x", status);
+    goto Exit;
+  }
+
+
 Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCOpenResources Exit");
@@ -164,9 +430,8 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
   WDF_PNPPOWER_EVENT_CALLBACKS PnpPowerCallbacks;
   PDEVICE_CONTEXT              DeviceContext;
   WDFDEVICE                    Device;
+  UCM_MANAGER_CONFIG           UcmConfig;
   NTSTATUS                     Status;
-
-  WDF_INTERRUPT_CONFIG InterruptConfig;
 
   PAGED_CODE();
 
@@ -177,6 +442,7 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
 
   WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&PnpPowerCallbacks);
   PnpPowerCallbacks.EvtDevicePrepareHardware = LumiaUSBCDevicePrepareHardware;
+  PnpPowerCallbacks.EvtDeviceReleaseHardware = LumiaUSBCDeviceReleaseHardware;
   PnpPowerCallbacks.EvtDeviceD0Entry         = LumiaUSBCDeviceD0Entry;
   WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &PnpPowerCallbacks);
 
@@ -196,76 +462,14 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
     DeviceContext->State0   = TRUE;
     DeviceContext->Polarity            = 0;
     DeviceContext->PowerSource         = 2;
+    DeviceContext->Connector           = NULL;
 
-    // Initialize all interrupts (consistent with IDA result)
-    // UC120
-    WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtUc120InterruptIsr, NULL);
-    InterruptConfig.EvtInterruptEnable  = Uc120InterruptEnable;
-    InterruptConfig.EvtInterruptDisable = Uc120InterruptDisable;
-    InterruptConfig.PassiveHandling     = TRUE;
-
-    Status = WdfInterruptCreate(
-        Device, &InterruptConfig, NULL, &DeviceContext->Uc120Interrupt);
-
+    UCM_MANAGER_CONFIG_INIT(&UcmConfig);
+    Status = UcmInitializeDevice(Device, &UcmConfig);
     if (!NT_SUCCESS(Status)) {
       TraceEvents(
-          TRACE_LEVEL_ERROR, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice WdfInterruptCreate Uc120Interrupt failed: "
-          "%!STATUS!\n",
-          Status);
-      goto Exit;
-    }
-
-    WdfInterruptSetPolicy(
-        DeviceContext->Uc120Interrupt, WdfIrqPolicyAllProcessorsInMachine,
-        WdfIrqPriorityHigh, 0);
-
-    // Plug detection
-    WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtPlugDetInterruptIsr, NULL);
-    InterruptConfig.PassiveHandling = TRUE;
-
-    Status = WdfInterruptCreate(
-        Device, &InterruptConfig, NULL, &DeviceContext->PlugDetectInterrupt);
-
-    if (!NT_SUCCESS(Status)) {
-      TraceEvents(
-          TRACE_LEVEL_ERROR, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice WdfInterruptCreate PlugDetectInterrupt "
-          "failed: %!STATUS!\n",
-          Status);
-      goto Exit;
-    }
-
-    // PMIC1 Interrupt
-    WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtPmicInterrupt1Isr, NULL);
-    InterruptConfig.PassiveHandling      = TRUE;
-    InterruptConfig.EvtInterruptWorkItem = PmicInterrupt1WorkItem;
-
-    Status = WdfInterruptCreate(
-        Device, &InterruptConfig, NULL, &DeviceContext->PmicInterrupt1);
-
-    if (!NT_SUCCESS(Status)) {
-      TraceEvents(
-          TRACE_LEVEL_ERROR, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice WdfInterruptCreate PmicInterrupt1 failed: "
-          "%!STATUS!\n",
-          Status);
-      goto Exit;
-    }
-
-    // PMIC2 Interrupt
-    WDF_INTERRUPT_CONFIG_INIT(&InterruptConfig, EvtPmicInterrupt2Isr, NULL);
-    InterruptConfig.PassiveHandling = TRUE;
-
-    Status = WdfInterruptCreate(
-        Device, &InterruptConfig, NULL, &DeviceContext->PmicInterrupt2);
-
-    if (!NT_SUCCESS(Status)) {
-      TraceEvents(
-          TRACE_LEVEL_ERROR, TRACE_DRIVER,
-          "LumiaUSBCKmCreateDevice WdfInterruptCreate PmicInterrupt2 failed: "
-          "%!STATUS!\n",
-          Status);
+          TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+          "LumiaUSBCKmCreateDevice Exit: 0x%x\n", Status);
       goto Exit;
     }
 
@@ -318,12 +522,65 @@ Exit:
 }
 
 NTSTATUS
+LumiaUSBCSetDataRole(UCMCONNECTOR Connector, UCM_DATA_ROLE DataRole)
+{
+  PCONNECTOR_CONTEXT connCtx;
+
+  // UNREFERENCED_PARAMETER(DataRole);
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSetDataRole Entry");
+
+  connCtx = ConnectorGetContext(Connector);
+
+  RtlWriteRegistryValue(
+      RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+      L"DataRoleRequested", REG_DWORD, &DataRole, sizeof(ULONG));
+
+  UcmConnectorDataDirectionChanged(Connector, TRUE, DataRole);
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSetDataRole Exit");
+
+  return STATUS_SUCCESS;
+}
+
+NTSTATUS
+LumiaUSBCSetPowerRole(UCMCONNECTOR Connector, UCM_POWER_ROLE PowerRole)
+{
+  PCONNECTOR_CONTEXT connCtx;
+
+  // UNREFERENCED_PARAMETER(PowerRole);
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSetPowerRole Entry");
+
+  connCtx = ConnectorGetContext(Connector);
+
+  RtlWriteRegistryValue(
+      RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+      L"PowerRoleRequested", REG_DWORD, &PowerRole, sizeof(ULONG));
+
+  UcmConnectorPowerDirectionChanged(Connector, TRUE, PowerRole);
+
+  TraceEvents(
+      TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "LumiaUSBCSetPowerRole Exit");
+
+  return STATUS_SUCCESS;
+}
+
+NTSTATUS
 LumiaUSBCDevicePrepareHardware(
     WDFDEVICE Device, WDFCMRESLIST ResourcesRaw,
     WDFCMRESLIST ResourcesTranslated)
 {
-  NTSTATUS        Status = STATUS_SUCCESS;
-  PDEVICE_CONTEXT pDeviceContext;
+  NTSTATUS                   Status = STATUS_SUCCESS;
+  PDEVICE_CONTEXT            pDeviceContext;
+  UCM_MANAGER_CONFIG         ucmCfg;
+  UCM_CONNECTOR_CONFIG       connCfg;
+  UCM_CONNECTOR_TYPEC_CONFIG typeCConfig;
+  UCM_CONNECTOR_PD_CONFIG    pdConfig;
+  WDF_OBJECT_ATTRIBUTES      attr;
 
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
@@ -365,6 +622,63 @@ LumiaUSBCDevicePrepareHardware(
   // Initialize PD event
   KeInitializeEvent(&pDeviceContext->PdEvent, NotificationEvent, FALSE);
 
+  if (pDeviceContext->Connector) {
+    goto Exit;
+  }
+
+  ///
+  // Initialize UCM Manager
+  //
+  UCM_MANAGER_CONFIG_INIT(&ucmCfg);
+
+  Status = UcmInitializeDevice(Device, &ucmCfg);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "UcmInitializeDevice failed 0x%x\n", Status);
+    goto Exit;
+  }
+
+  //
+  // Assemble the Type-C and PD configuration for UCM.
+  //
+
+  UCM_CONNECTOR_CONFIG_INIT(&connCfg, 0);
+
+  UCM_CONNECTOR_TYPEC_CONFIG_INIT(
+      &typeCConfig,
+      UcmTypeCOperatingModeDrp | UcmTypeCOperatingModeUfp |
+          UcmTypeCOperatingModeDfp,
+      UcmTypeCCurrent3000mA | UcmTypeCCurrent1500mA |
+          UcmTypeCCurrentDefaultUsb);
+
+  typeCConfig.EvtSetDataRole        = LumiaUSBCSetDataRole;
+  typeCConfig.AudioAccessoryCapable = FALSE;
+
+  UCM_CONNECTOR_PD_CONFIG_INIT(
+      &pdConfig, UcmPowerRoleSink | UcmPowerRoleSource);
+
+  pdConfig.EvtSetPowerRole = LumiaUSBCSetPowerRole;
+
+  connCfg.TypeCConfig = &typeCConfig;
+  connCfg.PdConfig    = &pdConfig;
+
+  WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attr, CONNECTOR_CONTEXT);
+
+  //
+  // Create the UCM connector object.
+  //
+
+  Status = UcmConnectorCreate(Device, &connCfg, &attr, &pDeviceContext->Connector);
+  if (!NT_SUCCESS(Status)) {
+    TraceEvents(
+        TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
+        "UcmConnectorCreate failed 0x%x\n", Status);
+    goto Exit;
+  }
+
+  Status = LumiaUSBCEvaluateManualMode(pDeviceContext);
+
 Exit:
   TraceEvents(
       TRACE_LEVEL_INFORMATION, TRACE_DRIVER,
@@ -373,6 +687,38 @@ Exit:
       DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL,
       "LumiaUSBCDevicePrepareHardware exit: 0x%x\n", Status);
   return Status;
+}
+
+NTSTATUS
+LumiaUSBCEvaluateManualMode(PDEVICE_CONTEXT pDeviceContext)
+{
+  unsigned char vbus = (unsigned char)0;
+  unsigned char polarity = (unsigned char)0;
+  unsigned long target   = UcmTypeCPartnerDfp;
+
+  if (!NT_SUCCESS(LocalReadRegistryValue(
+          (PCWSTR)L"\\Registry\\Machine\\System\\usbc", (PCWSTR)L"Polarity",
+          REG_DWORD, &polarity, sizeof(ULONG)))) {
+    polarity = 0;
+  }
+
+  if (!NT_SUCCESS(LocalReadRegistryValue(
+          (PCWSTR)L"\\Registry\\Machine\\System\\usbc", (PCWSTR)L"Target",
+          REG_DWORD, &target, sizeof(ULONG)))) {
+    target = UcmTypeCPartnerDfp;
+  }
+
+  if (!NT_SUCCESS(LocalReadRegistryValue(
+          (PCWSTR)L"\\Registry\\Machine\\System\\usbc", (PCWSTR)L"VbusEnable",
+          REG_DWORD, &vbus, sizeof(ULONG)))) {
+    vbus = 0;
+  }
+
+  if (vbus) {
+    target = UcmTypeCPartnerUfp;
+  }
+
+  return USBC_ChangeRole(pDeviceContext, target, polarity);
 }
 
 NTSTATUS
@@ -404,6 +750,18 @@ LumiaUSBCDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
   DbgPrintEx(
       DPFLTR_IHVBUS_ID, DPFLTR_INFO_LEVEL,
       "LumiaUSBCDeviceD0Entry entry\n");
+
+  unsigned char value = (unsigned char)0;
+
+  SetGPIO(pDeviceContext, pDeviceContext->PolGpio, &value);
+
+  value = (unsigned char)0;
+  SetGPIO(
+      pDeviceContext, pDeviceContext->AmselGpio,
+      &value); // high = HDMI only, medium (unsupported) = USB only, low = both
+
+  value = (unsigned char)1;
+  SetGPIO(pDeviceContext, pDeviceContext->EnGpio, &value);
 
   // Read calibration file
   RtlInitUnicodeString(
@@ -540,6 +898,12 @@ LumiaUSBCDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
 
   Delay.QuadPart = -2000000;
   KeDelayExecutionThread(UserMode, TRUE, &Delay);
+
+  value = (unsigned char)1;
+
+  RtlWriteRegistryValue(
+      RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+      L"Initialized", REG_DWORD, &value, sizeof(ULONG));
 
 Exit:
   DbgPrintEx(

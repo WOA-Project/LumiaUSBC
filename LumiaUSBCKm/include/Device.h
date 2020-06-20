@@ -15,6 +15,7 @@ Environment:
 --*/
 
 #include "public.h"
+#include <UcmCx.h>
 
 EXTERN_C_START
 
@@ -63,7 +64,24 @@ typedef struct _DEVICE_CONTEXT {
   UCHAR Register6;
   UCHAR Register7;
   UCHAR Register13;
+
+  UCMCONNECTOR  Connector;
+  LARGE_INTEGER VbusGpioId;
+  WDFIOTARGET   VbusGpio;
+  LARGE_INTEGER PolGpioId;
+  WDFIOTARGET   PolGpio;
+  LARGE_INTEGER AmselGpioId;
+  WDFIOTARGET   AmselGpio;
+  LARGE_INTEGER EnGpioId;
+  WDFIOTARGET   EnGpio;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
+
+typedef struct _CONNECTOR_CONTEXT {
+  UCM_TYPEC_PARTNER partner;
+
+} CONNECTOR_CONTEXT, *PCONNECTOR_CONTEXT;
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(CONNECTOR_CONTEXT, ConnectorGetContext)
 
 //
 // This macro will generate an inline function called DeviceGetContext
@@ -81,6 +99,7 @@ LumiaUSBCKmCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit);
 #define UC120_CALIBRATIONFILE_SIZE 11
 
 EVT_WDF_DEVICE_PREPARE_HARDWARE    LumiaUSBCDevicePrepareHardware;
+EVT_WDF_DEVICE_RELEASE_HARDWARE    LumiaUSBCDeviceReleaseHardware;
 EVT_WDF_DEVICE_D0_ENTRY            LumiaUSBCDeviceD0Entry;
 EVT_WDF_INTERRUPT_ISR              EvtPlugDetInterruptIsr;
 EVT_WDF_INTERRUPT_ISR              EvtUc120InterruptIsr;

@@ -524,7 +524,7 @@ Uc120_ReadIncomingPdMessage(PDEVICE_CONTEXT DeviceContext, WDFREQUEST Request)
   }
 
   Status =
-      ReadRegister(DeviceContext, 17, IncomingMessage, IncomingMessageSize);
+      ReadRegister(DeviceContext, 17, IncomingMessage, (ULONG)IncomingMessageSize);
   if (!NT_SUCCESS(Status)) {
     TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "ReadRegister R17 failed");
     goto exit;
@@ -888,6 +888,26 @@ NTSTATUS Uc120_Ioctl_ServeOther(
 
   int *  Buf;
   size_t BufSize;
+
+  RtlWriteRegistryValue(
+      RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+      L"1_Flag", REG_DWORD, &Flag, sizeof(ULONG));
+
+  RtlWriteRegistryValue(
+      RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+      L"2_State0", REG_DWORD, &State0, sizeof(ULONG));
+
+  RtlWriteRegistryValue(
+      RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+      L"3_State1", REG_DWORD, &State1, sizeof(ULONG));
+
+  RtlWriteRegistryValue(
+      RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+      L"4_Role", REG_DWORD, &Role, sizeof(ULONG));
+
+  RtlWriteRegistryValue(
+      RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
+      L"5_Polarity", REG_DWORD, &Polarity, sizeof(ULONG));
 
   if (DeviceContext->State9) {
     Status =
