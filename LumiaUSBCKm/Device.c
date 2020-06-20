@@ -899,8 +899,6 @@ LumiaUSBCDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
   Delay.QuadPart = -2000000;
   KeDelayExecutionThread(UserMode, TRUE, &Delay);
 
-  value = (unsigned char)1;
-
   RtlWriteRegistryValue(
       RTL_REGISTRY_ABSOLUTE, (PCWSTR)L"\\Registry\\Machine\\System\\usbc",
       L"Initialized", REG_DWORD, &value, sizeof(ULONG));

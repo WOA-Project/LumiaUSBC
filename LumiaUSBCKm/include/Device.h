@@ -151,6 +151,8 @@ NTSTATUS Uc120_Ioctl_ServeOther(
     PDEVICE_CONTEXT DeviceContext, int Flag, int State0, int State1, int Role,
     int Polarity);
 
+NTSTATUS LumiaUSBCEvaluateManualMode(PDEVICE_CONTEXT pDeviceContext);
+
 #define AFFINITY_MASK(n) ((ULONG_PTR)1 << (n))
 
 EXTERN_C_END
